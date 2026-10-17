@@ -3315,10 +3315,22 @@ local function settingsApp()
         elseif n == 11 then
             settings.bootAnim = not settings.bootAnim
         elseif n == 12 then
-            settings.menuLogo = not settings.menuLogo
+            -- FIX: Cycle through the string options for the menu logo
+            local modes = { "Off", "Corner", "Large" }
+            local cur = 1
+            for i, m in ipairs(modes) do if m == settings.menuLogo then cur = i break end end
+            local idx = pickMenu("Menu logo", modes)
+            if idx then settings.menuLogo = modes[idx] end
         elseif n == 13 then
-            settings.mirror = not settings.mirror
-            gfx.syncMonitors()
+            -- FIX: Cycle through the new monitor modes
+            local modes = { "Mirror", "Dashboard", "Off" }
+            local cur = 1
+            for i, m in ipairs(modes) do if m == settings.monMode then cur = i break end end
+            local idx = pickMenu("Monitor mode", modes)
+            if idx then
+                settings.monMode = modes[idx]
+                gfx.syncMonitors()
+            end
         elseif n == 14 then
             local idx = pickMenu("Monitor text scale", MON_SCALES)
             if idx then
@@ -3326,8 +3338,13 @@ local function settingsApp()
                 gfx.refitAll()
             end
         elseif n == 15 then
-            settings.theme = not settings.theme
-            restorePalette()
+            -- FIX: Theme is now a string, not a boolean
+            local tNames = {}
+            for i, t in ipairs(gfx.themes) do tNames[i] = t.name end
+            local idx = pickMenu("Theme", tNames)
+            if idx then
+                gfx.applyTheme(tNames[idx])
+            end
         elseif n == 16 then
             previewBoot()
         elseif n == 17 then
@@ -3354,10 +3371,10 @@ local function settingsApp()
             { label = "Logo color (lower half): " .. logoName() },
             { label = "Pixel graphics: " .. (settings.graphics and (gfx.pb and "on" or "on (not loaded)") or "off") },
             { label = "Boot animation: " .. (settings.bootAnim and "on" or "off") },
-            { label = "Menu logo: " .. (settings.menuLogo and "on" or "off") },
-            { label = "Monitor mirror: " .. (settings.mirror and "on" or "off") .. " (" .. #gfx.mirrors .. " found)" },
+            { label = "Menu logo: " .. tostring(settings.menuLogo) },
+            { label = "Monitor mode: " .. tostring(settings.monMode) },
             { label = "Monitor text scale: " .. settings.monScale },
-            { label = "Theme: " .. (settings.theme and "Prismarine" or "Classic colors") },
+            { label = "Theme: " .. tostring(settings.theme) },
             { label = "Preview boot screen" },
             { label = "Reset all settings" },
         }
