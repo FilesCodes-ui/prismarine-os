@@ -22,7 +22,7 @@ local MAX_FILE = 1000000         -- largest file the Messenger will send
 local NAME_FILE = ".simpleos_name"
 local LOG_FILE = "simpleos_error.log"
 
-local VERSION = "12"
+local VERSION = "13"
 local SELF = (shell and shell.getRunningProgram and shell.getRunningProgram()) or "startup.lua"
 if not SELF or SELF == "" then SELF = "startup.lua" end
 
@@ -3776,8 +3776,8 @@ local function ensureShell()
     return nil
 end
 
-local importApp
-do
+local IMPORT = {}
+
 -- ── Import ───────────────────────────────────────────────────────────────────
 -- Gets big files onto the computer.
 --   Drop files     takes any number of files dragged onto the window. The game
@@ -3789,23 +3789,23 @@ do
 --                  HTTP in ranged chunks, so the size is only limited by space.
 --   Imported files lists, renames and deletes what was imported.
 
-local IMP_CHUNK = 16384        -- bytes per read and write
-local IMP_HTTP_CHUNK = 524288  -- bytes per ranged request to the PC
+IMPORT.CHUNK = 16384        -- bytes per read and write
+IMPORT.HTTP_CHUNK = 524288  -- bytes per ranged request to the PC
 
 -- Lets other events run (the monitor dashboard keeps ticking).
-local function importYield()
+function IMPORT.Yield()
     os.queueEvent("import_yield")
     os.pullEventRaw("import_yield")
 end
 
-local function importFmtFree(n)
+function IMPORT.FmtFree(n)
     if n == math.huge or n > 2 ^ 40 then return "unlimited" end
     return fmtSize(n)
 end
 
 -- Turns a raw event into the same table readInput returns. Used by screens that
 -- also need events readInput does not pass on (file_transfer, http_success).
-local function importTranslate(ev)
+function IMPORT.Translate(ev)
     local name = ev[1]
     if name == "key" then
         local k = keys.getName(ev[2])
@@ -3837,7 +3837,7 @@ end
 
 -- A file name that is safe to create: no folders, no hidden dot files, and
 -- (when the setting is on) no spaces or odd characters.
-local function importSafeName(name)
+function IMPORT.SafeName(name)
     name = tostring(name or ""):gsub("\\", "/")
     name = name:match("([^/]*)$") or ""
     name = name:gsub("%c", "")
@@ -3852,7 +3852,7 @@ local function importSafeName(name)
 end
 
 -- name.ext becomes name (2).ext, then name (3).ext, until it is free.
-local function importUnique(dir, name)
+function IMPORT.Unique(dir, name)
     local base, ext = name:match("^(.*)(%.[^%.]*)$")
     if not base or base == "" then base, ext = name, "" end
     local n = 2
@@ -3864,7 +3864,7 @@ local function importUnique(dir, name)
 end
 
 -- Makes sure the import folder exists and can be written to. Returns its path.
-local function importDirReady()
+function IMPORT.DirReady()
     local dir = fs.combine("", tostring(settings.importDir or ""))
     local ok, err = pcall(function()
         if fs.exists(dir) and not fs.isDir(dir) then error(dir .. " is a file", 0) end
@@ -3882,7 +3882,7 @@ local function importDirReady()
 end
 
 -- Files the OS needs. Import never overwrites, renames or deletes them.
-local function importProtected(path)
+function IMPORT.Protected(path)
     path = fs.combine("", path)
     local first = path:match("^([^/]*)") or path
     if path == fs.combine("", SELF) or path == "startup.lua" or path == "startup" then return true end
@@ -3893,9 +3893,9 @@ end
 
 -- Where to write a file called name. Follows the "if file exists" setting.
 -- Returns nil when the file is skipped.
-local function importTarget(dir, name)
+function IMPORT.Target(dir, name)
     local path = fs.combine(dir, name)
-    if importProtected(path) then
+    if IMPORT.Protected(path) then
         showMessage("Import", { name .. " is a system file.", "Import will not replace it." }, colors.red)
         return nil
     end
@@ -3903,7 +3903,7 @@ local function importTarget(dir, name)
         if fs.isDir(path) then return nil end
         local mode = settings.importOverwrite
         if mode == "Rename" then
-            path = fs.combine(dir, importUnique(dir, name))
+            path = fs.combine(dir, IMPORT.Unique(dir, name))
         elseif mode ~= "Replace" then
             if not confirm({ name .. " already exists.", "Replace it?" }) then return nil end
         end
@@ -3911,13 +3911,13 @@ local function importTarget(dir, name)
     return path
 end
 
-local function importRoom(dir, need)
+function IMPORT.Room(dir, need)
     local free = fs.getFreeSpace(dir == "" and "/" or dir)
     return free >= need, free
 end
 
 -- A full screen progress display with a Pixelbox bar. cancel adds a Cancel button.
-local function importDraw(title, lines, frac, status, cancel)
+function IMPORT.Draw(title, lines, frac, status, cancel)
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
     term.clear()
@@ -3947,14 +3947,14 @@ end
 
 -- Copies a dropped file handle into path. Returns true and the size, or false
 -- and the reason. A half written file is never left behind.
-local function importCopy(src, path)
+function IMPORT.Copy(src, path)
     local tmp = path .. ".importing"
     local total = 0
     local ok, err = pcall(function()
         local out = fs.open(tmp, "wb")
         if not out then error("cannot write " .. path, 0) end
         while true do
-            local chunk = src.read(IMP_CHUNK)
+            local chunk = src.read(IMPORT.CHUNK)
             if not chunk then break end
             out.write(chunk)
             total = total + #chunk
@@ -3972,22 +3972,22 @@ end
 
 -- ── Drop files ───────────────────────────────────────────────────────────────
 
-local function importReceive(files, dir, say)
+function IMPORT.Receive(files, dir, say)
     for _, f in ipairs(files.getFiles()) do
-        local name = importSafeName(f.getName())
+        local name = IMPORT.SafeName(f.getName())
         if not name then
             say("Skipped a file with no usable name", colors.red)
         else
             local size = f.seek("end") or 0
             f.seek("set", 0)
-            local path = importTarget(dir, name)
-            local room, free = importRoom(dir, size)
+            local path = IMPORT.Target(dir, name)
+            local room, free = IMPORT.Room(dir, size)
             if not path then
                 say("Skipped " .. name, colors.yellow)
             elseif not room then
-                say("No room for " .. name .. " (" .. fmtSize(size) .. ", free " .. importFmtFree(free) .. ")", colors.red)
+                say("No room for " .. name .. " (" .. fmtSize(size) .. ", free " .. IMPORT.FmtFree(free) .. ")", colors.red)
             else
-                local ok, res = importCopy(f, path)
+                local ok, res = IMPORT.Copy(f, path)
                 if ok then
                     say("Saved " .. fs.getName(path) .. "  " .. fmtSize(res), colors.lime)
                     if name:match("%.part%d+$") then
@@ -4002,8 +4002,8 @@ local function importReceive(files, dir, say)
     end
 end
 
-local function importDrop()
-    local dir = importDirReady()
+function IMPORT.Drop()
+    local dir = IMPORT.DirReady()
     if not dir then return end
     local log = {}
     local function say(text, color)
@@ -4016,7 +4016,7 @@ local function importDrop()
         term.setTextColor(colors.white)
         term.clear()
         header("Import: drop files")
-        local free = importFmtFree(fs.getFreeSpace(dir == "" and "/" or dir))
+        local free = IMPORT.FmtFree(fs.getFreeSpace(dir == "" and "/" or dir))
         local below = drawCard(3, {
             "Drag files from your PC onto this window.",
             "Saved to /" .. dir .. "     Free: " .. free,
@@ -4040,10 +4040,10 @@ local function importDrop()
     while true do
         local ev = table.pack(os.pullEventRaw())
         if ev[1] == "file_transfer" then
-            importReceive(ev[2], dir, say)
+            IMPORT.Receive(ev[2], dir, say)
             draw()
         else
-            local i = importTranslate(ev)
+            local i = IMPORT.Translate(ev)
             if i then
                 if i.k == "q" then return end
                 if i.resized then draw() end
@@ -4055,7 +4055,7 @@ end
 -- ── Join parts ───────────────────────────────────────────────────────────────
 
 -- Finds name.part1, name.part2, ... groups in the import folder.
-local function importScanParts(dir)
+function IMPORT.ScanParts(dir)
     local groups, list = {}, {}
     local ok, names = pcall(fs.list, dir)
     if not ok then return list end
@@ -4087,19 +4087,19 @@ local function importScanParts(dir)
     return list
 end
 
-local function importJoin(dir, g)
+function IMPORT.Join(dir, g)
     if g.missing then
         showMessage("Join parts", { "Part " .. g.missing .. " of " .. g.base .. " is missing.", "Drop it, then try again." }, colors.red)
         return
     end
-    local name = importSafeName(g.base) or g.base
-    local target = importTarget(dir, name)
+    local name = IMPORT.SafeName(g.base) or g.base
+    local target = IMPORT.Target(dir, name)
     if not target then return end
-    local room, free = importRoom(dir, g.total)
+    local room, free = IMPORT.Room(dir, g.total)
     if not room then
         showMessage("Join parts", {
             "Not enough room to join " .. name .. ".",
-            "Needs " .. fmtSize(g.total) .. ", free " .. importFmtFree(free) .. ".",
+            "Needs " .. fmtSize(g.total) .. ", free " .. IMPORT.FmtFree(free) .. ".",
         }, colors.red)
         return
     end
@@ -4117,14 +4117,14 @@ local function importJoin(dir, g)
                 error("cannot read part " .. i, 0)
             end
             while true do
-                local chunk = src.read(IMP_CHUNK)
+                local chunk = src.read(IMPORT.CHUNK)
                 if not chunk then break end
                 out.write(chunk)
                 done = done + #chunk
                 if nowSec() - last >= 0.15 then
                     last = nowSec()
-                    importDraw("Join parts", lines, done / g.total, "Part " .. i .. " of " .. g.max .. "   " .. fmtSize(done), false)
-                    importYield()
+                    IMPORT.Draw("Join parts", lines, done / g.total, "Part " .. i .. " of " .. g.max .. "   " .. fmtSize(done), false)
+                    IMPORT.Yield()
                 end
             end
             src.close()
@@ -4148,8 +4148,8 @@ local function importJoin(dir, g)
     }, colors.lime)
 end
 
-local function importJoinApp()
-    local dir = importDirReady()
+function IMPORT.JoinApp()
+    local dir = IMPORT.DirReady()
     if not dir then return end
     local sel, top = 1, 1
     local buttons = {
@@ -4158,7 +4158,7 @@ local function importJoinApp()
         { tag = "Q", label = "Back", k = "q" },
     }
     while true do
-        local groups = importScanParts(dir)
+        local groups = IMPORT.ScanParts(dir)
         local entries = {}
         for n, g in ipairs(groups) do
             local state = g.missing and ("missing part " .. g.missing) or (g.count .. " parts")
@@ -4179,26 +4179,26 @@ local function importJoinApp()
         elseif i.k == "down" and sel < #entries then
             sel = sel + 1
         elseif i.k == "enter" and groups[sel] then
-            importJoin(dir, groups[sel])
+            IMPORT.Join(dir, groups[sel])
         elseif i.k == "q" then
             return
         elseif i.click and i.y >= 2 and i.y <= H - 1 and groups[top + i.y - 2] then
             sel = top + i.y - 2
-            importJoin(dir, groups[sel])
+            IMPORT.Join(dir, groups[sel])
         end
     end
 end
 
 -- ── Import from PC ───────────────────────────────────────────────────────────
 
-local importReq = 0
+IMPORT.req = 0
 
 -- One HTTP request that can be cancelled with Q. Returns the body and status
 -- code, or nil, the reason, the status code (if any), and true when cancelled.
-local function importHttp(url, headers, redraw)
+function IMPORT.Http(url, headers, redraw)
     if not http then return nil, "HTTP is disabled on this server" end
-    importReq = importReq + 1
-    local full = url .. (url:find("?", 1, true) and "&" or "?") .. "n=" .. importReq .. "x" .. os.epoch("utc")
+    IMPORT.req = IMPORT.req + 1
+    local full = url .. (url:find("?", 1, true) and "&" or "?") .. "n=" .. IMPORT.req .. "x" .. os.epoch("utc")
     local ok, err = http.request({ url = full, headers = headers, binary = true })
     if ok == false then return nil, tostring(err) end
     local timer = os.startTimer(30)
@@ -4223,7 +4223,7 @@ local function importHttp(url, headers, redraw)
         elseif name == "timer" and ev[2] == timer then
             return nil, "timed out"
         else
-            local i = importTranslate(ev)
+            local i = IMPORT.Translate(ev)
             if i and i.k == "q" then
                 os.cancelTimer(timer)
                 return nil, "cancelled", nil, true
@@ -4233,7 +4233,7 @@ local function importHttp(url, headers, redraw)
     end
 end
 
-local function importHostUrl()
+function IMPORT.HostUrl()
     local host = tostring(settings.importHost or "localhost:8000")
     host = host:gsub("^https?://", "")
     host = host:gsub("/+$", "")
@@ -4241,7 +4241,7 @@ local function importHostUrl()
 end
 
 -- Plain words for the errors people hit most.
-local function importExplain(err, code)
+function IMPORT.Explain(err, code)
     local text = tostring(err):lower()
     if text:find("permit") or text:find("not allowed") or text:find("blocked") then
         return {
@@ -4260,13 +4260,13 @@ local function importExplain(err, code)
     return {}
 end
 
-local function importFetchList(base)
-    importDraw("Import from PC", { "Asking " .. base .. " for its files..." }, 0, "", true)
-    local body, code, status, cancelled = importHttp(base .. "/list", nil, nil)
+function IMPORT.FetchList(base)
+    IMPORT.Draw("Import from PC", { "Asking " .. base .. " for its files..." }, 0, "", true)
+    local body, code, status, cancelled = IMPORT.Http(base .. "/list", nil, nil)
     if not body then
         if cancelled then return nil end
         local lines = { "Could not get the file list.", tostring(code) }
-        for _, l in ipairs(importExplain(code, status)) do table.insert(lines, l) end
+        for _, l in ipairs(IMPORT.Explain(code, status)) do table.insert(lines, l) end
         showMessage("Import from PC", lines, colors.red)
         return nil
     end
@@ -4285,19 +4285,19 @@ local function importFetchList(base)
     return files
 end
 
-local function importDownload(base, entry, dir)
-    local name = importSafeName(entry.name)
+function IMPORT.Download(base, entry, dir)
+    local name = IMPORT.SafeName(entry.name)
     if not name then
         showMessage("Import from PC", { "That file name cannot be used." }, colors.red)
         return
     end
-    local target = importTarget(dir, name)
+    local target = IMPORT.Target(dir, name)
     if not target then return end
-    local room, free = importRoom(dir, entry.size)
+    local room, free = IMPORT.Room(dir, entry.size)
     if not room then
         showMessage("Import from PC", {
             name .. " needs " .. fmtSize(entry.size) .. ".",
-            "Only " .. importFmtFree(free) .. " is free.",
+            "Only " .. IMPORT.FmtFree(free) .. " is free.",
         }, colors.red)
         return
     end
@@ -4307,7 +4307,7 @@ local function importDownload(base, entry, dir)
     local pos = 0
     local lines = { "Downloading " .. fs.getName(target), fmtSize(entry.size) .. " from " .. tostring(settings.importHost) }
     local function redraw()
-        importDraw("Import from PC", lines, entry.size > 0 and pos / entry.size or 1, fmtSize(pos) .. " of " .. fmtSize(entry.size), true)
+        IMPORT.Draw("Import from PC", lines, entry.size > 0 and pos / entry.size or 1, fmtSize(pos) .. " of " .. fmtSize(entry.size), true)
     end
 
     local out = fs.open(tmp, "wb")
@@ -4325,12 +4325,12 @@ local function importDownload(base, entry, dir)
     redraw()
     local url = base .. "/file?name=" .. textutils.urlEncode(entry.name)
     while pos < entry.size do
-        local last = math.min(entry.size, pos + IMP_HTTP_CHUNK) - 1
-        local body, code, status, cancelled = importHttp(url, { Range = "bytes=" .. pos .. "-" .. last }, redraw)
+        local last = math.min(entry.size, pos + IMPORT.HTTP_CHUNK) - 1
+        local body, code, status, cancelled = IMPORT.Http(url, { Range = "bytes=" .. pos .. "-" .. last }, redraw)
         if not body then
             if cancelled then return fail({ "Cancelled. Nothing was saved." }, colors.yellow) end
             local msg = { "Download failed at " .. fmtSize(pos) .. ".", tostring(code) }
-            for _, l in ipairs(importExplain(code, status)) do table.insert(msg, l) end
+            for _, l in ipairs(IMPORT.Explain(code, status)) do table.insert(msg, l) end
             return fail(msg)
         end
         local want = last - pos + 1
@@ -4346,7 +4346,7 @@ local function importDownload(base, entry, dir)
         if not ok then return fail({ "Could not write the file.", tostring(err) }) end
         pos = pos + #body
         redraw()
-        importYield()
+        IMPORT.Yield()
     end
     out.close()
 
@@ -4360,10 +4360,10 @@ local function importDownload(base, entry, dir)
     if settings.importVerify and entry.sha256 then
         local ticks = 0
         local lines3 = { "Checking SHA-256 of " .. fs.getName(target), "This is slow for big files." }
-        importDraw("Import from PC", lines3, 1, "Hashing...", false)
+        IMPORT.Draw("Import from PC", lines3, 1, "Hashing...", false)
         local sum = hashFile(tmp, function()
             ticks = ticks + 1
-            if ticks % 40 == 0 then importDraw("Import from PC", lines3, 1, "Hashing... " .. ticks * 512 .. " bytes", false) end
+            if ticks % 40 == 0 then IMPORT.Draw("Import from PC", lines3, 1, "Hashing... " .. ticks * 512 .. " bytes", false) end
         end)
         if sum ~= tostring(entry.sha256):lower() then
             pcall(fs.delete, tmp)
@@ -4385,11 +4385,11 @@ local function importDownload(base, entry, dir)
     }, colors.lime)
 end
 
-local function importPC()
-    local dir = importDirReady()
+function IMPORT.PC()
+    local dir = IMPORT.DirReady()
     if not dir then return end
-    local base = importHostUrl()
-    local files = importFetchList(base)
+    local base = IMPORT.HostUrl()
+    local files = IMPORT.FetchList(base)
     if not files then return end
     local sel, top = 1, 1
     local buttons = {
@@ -4400,7 +4400,7 @@ local function importPC()
     while true do
         local entries = {}
         for n, f in ipairs(files) do
-            local local_ = fs.exists(fs.combine(dir, importSafeName(f.name) or "?"))
+            local local_ = fs.exists(fs.combine(dir, IMPORT.SafeName(f.name) or "?"))
             entries[n] = {
                 label = f.name .. "  " .. fmtSize(f.size) .. (local_ and "  (on this computer)" or ""),
                 color = local_ and colors.lightGray or nil,
@@ -4418,23 +4418,23 @@ local function importPC()
         elseif i.k == "down" and sel < #entries then
             sel = sel + 1
         elseif i.k == "r" then
-            local again = importFetchList(base)
+            local again = IMPORT.FetchList(base)
             if again then files, sel, top = again, 1, 1 end
         elseif i.k == "enter" and files[sel] then
-            importDownload(base, files[sel], dir)
+            IMPORT.Download(base, files[sel], dir)
         elseif i.k == "q" then
             return
         elseif i.click and i.y >= 2 and i.y <= H - 1 and files[top + i.y - 2] then
             sel = top + i.y - 2
-            importDownload(base, files[sel], dir)
+            IMPORT.Download(base, files[sel], dir)
         end
     end
 end
 
 -- ── Imported files ───────────────────────────────────────────────────────────
 
-local function importFilesApp()
-    local dir = importDirReady()
+function IMPORT.FilesApp()
+    local dir = IMPORT.DirReady()
     if not dir then return end
     local sel, top = 1, 1
     local buttons = {
@@ -4443,7 +4443,7 @@ local function importFilesApp()
     }
     local function manage(name)
         local path = fs.combine(dir, name)
-        if importProtected(path) then return end
+        if IMPORT.Protected(path) then return end
         local pick = pickMenu(name, { "Delete", "Rename", "Back" })
         if pick == 1 then
             if confirm({ "Delete " .. name .. "?", fmtSize(fs.getSize(path)) }) then
@@ -4451,7 +4451,7 @@ local function importFilesApp()
             end
         elseif pick == 2 then
             local v = ask("Rename", { "New name for " .. name .. ":" }, name)
-            local new = v and importSafeName(v)
+            local new = v and IMPORT.SafeName(v)
             if new and new ~= name then
                 if fs.exists(fs.combine(dir, new)) then
                     showMessage("Rename", { new .. " already exists." }, colors.red)
@@ -4467,7 +4467,7 @@ local function importFilesApp()
         local ok, list = pcall(fs.list, dir)
         for _, n in ipairs(ok and list or {}) do
             local p = fs.combine(dir, n)
-            if not fs.isDir(p) and not importProtected(p) and n:sub(1, 1) ~= "." then
+            if not fs.isDir(p) and not IMPORT.Protected(p) and n:sub(1, 1) ~= "." then
                 table.insert(names, n)
             end
         end
@@ -4480,7 +4480,7 @@ local function importFilesApp()
         end
         if sel > #entries then sel = #entries end
         top = clampTop(sel, top)
-        drawList("Files in /" .. dir .. "  free " .. importFmtFree(fs.getFreeSpace(dir == "" and "/" or dir)), entries, sel, top, buttons)
+        drawList("Files in /" .. dir .. "  free " .. IMPORT.FmtFree(fs.getFreeSpace(dir == "" and "/" or dir)), entries, sel, top, buttons)
         local i = readInput() or {}
         if i.k == "up" and sel > 1 then
             sel = sel - 1
@@ -4499,7 +4499,7 @@ end
 
 -- ── Import settings ──────────────────────────────────────────────────────────
 
-local function importSettings()
+function IMPORT.Settings()
     local sel, top = 1, 1
     local buttons = {
         { tag = "Ent", label = "Change", k = "enter" },
@@ -4595,18 +4595,18 @@ end
 
 -- ── The Import app ───────────────────────────────────────────────────────────
 
-function importApp()
+function IMPORT.App()
     local sel, top = 1, 1
     local buttons = {
         { tag = "Ent", label = "Open", k = "enter" },
         { tag = "Q", label = "Back", k = "q" },
     }
     local function run(n)
-        if n == 1 then importDrop()
-        elseif n == 2 then importJoinApp()
-        elseif n == 3 then importPC()
-        elseif n == 4 then importFilesApp()
-        elseif n == 5 then importSettings()
+        if n == 1 then IMPORT.Drop()
+        elseif n == 2 then IMPORT.JoinApp()
+        elseif n == 3 then IMPORT.PC()
+        elseif n == 4 then IMPORT.FilesApp()
+        elseif n == 5 then IMPORT.Settings()
         end
         restorePalette()
     end
@@ -4637,13 +4637,10 @@ function importApp()
     end
 end
 
-
-end
-
 local APPS = {
     messenger = messengerApp,
     download  = downloadApp,
-    import    = importApp,
+    import    = IMPORT.App,
     disks     = diskApp,
     settings  = settingsApp,
     others    = othersApp,
