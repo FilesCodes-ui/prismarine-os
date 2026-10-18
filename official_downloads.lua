@@ -17,7 +17,7 @@ if type(api) ~= "table" or not api.header then
     error("Open Download from the Prismarine OS menu.", 0)
 end
 
-local VERSION = "2"
+local VERSION = "3"
 
 local settings, header, footer, footerButtons = api.settings, api.header, api.footer, api.footerButtons
 local drawList, drawCard, clampTop = api.drawList, api.drawCard, api.clampTop
@@ -780,6 +780,9 @@ function D.hostUrl()
     local host = tostring(settings.importHost or "localhost:8000")
     host = host:gsub("^https?://", "")
     host = host:gsub("/+$", "")
+    -- "localhost" can resolve to the IPv6 address ::1, which the usual
+    -- "127.0.0.0/8" allow rule does not cover. Use the IPv4 loopback instead.
+    host = host:gsub("^[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]", "127.0.0.1")
     return "http://" .. host
 end
 
@@ -1165,7 +1168,7 @@ function D.settingsApp()
         elseif n == 2 then
             local v = ask("PC address", {
                 "Address of the PC running prismarine_share.py.",
-                "Example: localhost:8000 or 192.168.1.20:8000",
+                "Example: 127.0.0.1:8000 or 192.168.1.20:8000",
             }, settings.importHost)
             if v then
                 v = v:gsub("^https?://", ""):gsub("/+$", "")
