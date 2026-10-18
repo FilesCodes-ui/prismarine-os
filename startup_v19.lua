@@ -1836,37 +1836,37 @@ end
 
 local clk = { state = nil, lastText = nil, lastAt = 0 }
 
-local bs = { pool = {}, used = 0, frame = nil, bar = nil, clock = nil, logger = nil, foreign = nil }
+gfx.bs = { pool = {}, used = 0, frame = nil, bar = nil, clock = nil, logger = nil, foreign = nil }
 
-function bs.on()
+function gfx.bs.on()
     return settings.uiEngine == "Basalt" and gfx.basalt ~= nil and not gfx.basaltFailed
 end
 
-function bs.fail(err)
-    if bs.logger then pcall(bs.logger, "Basalt screen failed: " .. tostring(err)) end
+function gfx.bs.fail(err)
+    if gfx.bs.logger then pcall(gfx.bs.logger, "Basalt screen failed: " .. tostring(err)) end
     gfx.basaltFailed = true
     settings.graphics = gfx.pb ~= nil
 end
 
 -- Runs a drawing function. Returns true when Basalt drew it.
-function bs.try(fn, ...)
-    if not bs.on() then return false end
+function gfx.bs.try(fn, ...)
+    if not gfx.bs.on() then return false end
     local ok, err = pcall(fn, ...)
     if ok then return true end
-    bs.fail(err)
+    gfx.bs.fail(err)
     return false
 end
 
-function bs.getFrame()
+function gfx.bs.getFrame()
     local f = gfx.basalt.getMainFrame()
-    if bs.frame ~= f then
-        bs.frame, bs.pool, bs.used, bs.bar, bs.clock = f, {}, 0, nil, nil
+    if gfx.bs.frame ~= f then
+        gfx.bs.frame, gfx.bs.pool, gfx.bs.used, gfx.bs.bar, gfx.bs.clock = f, {}, 0, nil, nil
     end
     if f:getWidth() ~= W or f:getHeight() ~= H then f:term_resize() end
     return f
 end
 
-function bs.newLabel(frame)
+function gfx.bs.newLabel(frame)
     local el = frame:addLabel()
     -- Auto size makes the label draw its text exactly as given. Without it,
     -- Basalt wraps the text, which drops leading spaces and shows nothing at
@@ -1878,7 +1878,7 @@ function bs.newLabel(frame)
 end
 
 -- Sets a label, touching only what changed. The text is cut or padded to width.
-function bs.put(item, x, y, width, text, bg, fg, z)
+function gfx.bs.put(item, x, y, width, text, bg, fg, z)
     text = pad(text, width)
     local c, el = item.c, item.el
     z = z or 3
@@ -1890,7 +1890,7 @@ function bs.put(item, x, y, width, text, bg, fg, z)
     if c.vis ~= true then el:setVisible(true); c.vis = true end
 end
 
-function bs.hide(item)
+function gfx.bs.hide(item)
     if item.c.vis ~= false then
         item.el:setVisible(false)
         item.c.vis = false
@@ -1898,44 +1898,44 @@ function bs.hide(item)
 end
 
 -- Takes the next label of this screen and sets it. Returns the label item.
-function bs.text(x, y, width, text, bg, fg, z)
+function gfx.bs.text(x, y, width, text, bg, fg, z)
     if width < 1 then return nil end
-    bs.used = bs.used + 1
-    local item = bs.pool[bs.used]
+    gfx.bs.used = gfx.bs.used + 1
+    local item = gfx.bs.pool[gfx.bs.used]
     if not item then
-        item = bs.newLabel(bs.frame)
-        bs.pool[bs.used] = item
+        item = gfx.bs.newLabel(gfx.bs.frame)
+        gfx.bs.pool[gfx.bs.used] = item
     end
-    bs.put(item, x, y, width, text, bg, fg, z)
+    gfx.bs.put(item, x, y, width, text, bg, fg, z)
     return item
 end
 
 -- Starts a new screen.
-function bs.begin()
-    local f = bs.getFrame()
-    for i = 1, bs.used do bs.hide(bs.pool[i]) end
-    bs.used = 0
-    bs.clock = nil
-    if bs.bar then bs.hide(bs.bar.fill); bs.hide(bs.bar.pct) end
-    if bs.foreign then pcall(bs.foreign) end
+function gfx.bs.begin()
+    local f = gfx.bs.getFrame()
+    for i = 1, gfx.bs.used do gfx.bs.hide(gfx.bs.pool[i]) end
+    gfx.bs.used = 0
+    gfx.bs.clock = nil
+    if gfx.bs.bar then gfx.bs.hide(gfx.bs.bar.fill); gfx.bs.hide(gfx.bs.bar.pct) end
+    if gfx.bs.foreign then pcall(gfx.bs.foreign) end
     f:setBackgroundEnabled(false)
     f._render:clear(colors.black)
     return f
 end
 
 -- Gives the frame back to the Basalt menu, which paints its own background.
-function bs.release()
-    if not bs.frame then return end
-    for i = 1, bs.used do bs.hide(bs.pool[i]) end
-    bs.used = 0
-    bs.clock = nil
-    if bs.bar then bs.hide(bs.bar.fill); bs.hide(bs.bar.pct) end
-    bs.frame:setBackgroundEnabled(true)
+function gfx.bs.release()
+    if not gfx.bs.frame then return end
+    for i = 1, gfx.bs.used do gfx.bs.hide(gfx.bs.pool[i]) end
+    gfx.bs.used = 0
+    gfx.bs.clock = nil
+    if gfx.bs.bar then gfx.bs.hide(gfx.bs.bar.fill); gfx.bs.hide(gfx.bs.bar.pct) end
+    gfx.bs.frame:setBackgroundEnabled(true)
 end
 
 -- Paints the widgets onto the terminal.
-function bs.flush()
-    local f = bs.frame
+function gfx.bs.flush()
+    local f = gfx.bs.frame
     f._renderUpdate = true
     f:render()
     f:postRender()
@@ -1943,8 +1943,8 @@ end
 
 -- What the last header looked like, so clk.refresh can repaint only the clock.
 
-local function headerBasalt(title, bar)
-    bs.begin()
+function gfx.bs.headerBasalt(title, bar)
+    gfx.bs.begin()
     local clock = clockText()
     local tfg = textOn(bar)
     -- The clock sits in a block next to the bar. Black, or gray on a black bar.
@@ -1953,19 +1953,19 @@ local function headerBasalt(title, bar)
     local state = { title = title, bar = bar, fancy = false, len = 0, basalt = true }
     if showClock then
         local slot = #clock + 2
-        bs.text(1, 1, W - slot, pad(" " .. title, W - slot), bar, tfg)
-        bs.clock = bs.text(W - slot + 1, 1, slot, " " .. clock .. " ", block, colors.white)
+        gfx.bs.text(1, 1, W - slot, pad(" " .. title, W - slot), bar, tfg)
+        gfx.bs.clock = gfx.bs.text(W - slot + 1, 1, slot, " " .. clock .. " ", block, colors.white)
         state.len = #clock
     else
-        bs.text(1, 1, W, pad(" " .. title, W), bar, tfg)
+        gfx.bs.text(1, 1, W, pad(" " .. title, W), bar, tfg)
     end
     clk.state = state
-    bs.flush()
+    gfx.bs.flush()
 end
 
 local function header(title)
     local bar = colorValue(settings.barColor, colors.blue)
-    if bs.try(headerBasalt, title, bar) then return end
+    if gfx.bs.try(gfx.bs.headerBasalt, title, bar) then return end
     term.setCursorBlink(false)
     term.setCursorPos(1, 1)
     term.setBackgroundColor(bar)
@@ -1998,15 +1998,15 @@ function clk.refresh()
     if not h then return end
     if h.basalt then
         -- The clock label is only valid while the Basalt screen is on.
-        if not bs.on() or not bs.clock then return end
+        if not gfx.bs.on() or not gfx.bs.clock then return end
         local clock = clockText()
         if clock == "" or #clock > h.len then return end
-        local item = bs.clock
+        local item = gfx.bs.clock
         local text = " " .. string.rep(" ", h.len - #clock) .. clock .. " "
         if item.c.text ~= text then
-            bs.try(function()
-                bs.put(item, item.c.x, item.c.y, item.c.w, text, item.c.bg, item.c.fg, item.c.z)
-                bs.flush()
+            gfx.bs.try(function()
+                gfx.bs.put(item, item.c.x, item.c.y, item.c.w, text, item.c.bg, item.c.fg, item.c.z)
+                gfx.bs.flush()
             end)
         end
         return
@@ -2031,9 +2031,9 @@ end
 -- Plain text bar on the bottom row.
 local function footer(text)
     buttonHits = {}
-    if bs.try(function()
-        bs.text(1, H, W, pad(" " .. text, W), colors.gray, colors.white)
-        bs.flush()
+    if gfx.bs.try(function()
+        gfx.bs.text(1, H, W, pad(" " .. text, W), colors.gray, colors.white)
+        gfx.bs.flush()
     end) then return end
     term.setCursorPos(1, H)
     term.setBackgroundColor(colors.gray)
@@ -2044,8 +2044,8 @@ end
 -- Clickable button bar on the bottom row.
 -- buttons: list of { tag = "Q", label = "Back", k = "q" }
 -- Buttons that do not fit the screen are skipped. Their keys still work.
-local function footerButtonsBasalt(buttons)
-    bs.text(1, H, W, string.rep(" ", W), colors.gray, colors.white, 3)
+function gfx.bs.footerButtonsBasalt(buttons)
+    gfx.bs.text(1, H, W, string.rep(" ", W), colors.gray, colors.white, 3)
     local accent = colorValue(settings.barColor, colors.blue)
     if accent == colors.black or accent == colors.gray then accent = colors.blue end
     local x = 1
@@ -2055,23 +2055,23 @@ local function footerButtonsBasalt(buttons)
         local total = #tagText + #labelText
         if x + total - 1 > W then break end
         if tagText ~= "" then
-            bs.text(x, H, #tagText, tagText, accent, textOn(accent), 4)
+            gfx.bs.text(x, H, #tagText, tagText, accent, textOn(accent), 4)
         end
-        bs.text(x + #tagText, H, #labelText, labelText, colors.lightGray, colors.black, 4)
+        gfx.bs.text(x + #tagText, H, #labelText, labelText, colors.lightGray, colors.black, 4)
         table.insert(buttonHits, { x1 = x, x2 = x + total - 1, k = b.k })
         x = x + total + 1
     end
     -- Computer ID at the right end when it fits, like the main menu.
     local idText = "ID " .. os.getComputerID() .. " "
     if x + #idText + 1 <= W then
-        bs.text(W - #idText + 1, H, #idText, idText, colors.gray, colors.lightGray, 4)
+        gfx.bs.text(W - #idText + 1, H, #idText, idText, colors.gray, colors.lightGray, 4)
     end
-    bs.flush()
+    gfx.bs.flush()
 end
 
 local function footerButtons(buttons)
     buttonHits = {}
-    if bs.try(footerButtonsBasalt, buttons) then return end
+    if gfx.bs.try(gfx.bs.footerButtonsBasalt, buttons) then return end
     term.setCursorPos(1, H)
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
@@ -2159,7 +2159,7 @@ local function readInput()
     end
 end
 
-local function drawListBasalt(entries, sel, top)
+function gfx.bs.drawListBasalt(entries, sel, top)
     local visible = H - 2
     local scroll = #entries > visible
     local w = scroll and (W - 1) or W
@@ -2175,11 +2175,11 @@ local function drawListBasalt(entries, sel, top)
             -- Selected row: full width highlight and a pointer in the gutter.
             local text = (on and "\16 " or "  ") .. e.label
             if e.swatch and w >= 8 then
-                bs.text(1, row, w - 3, pad(text, w - 3), bg, fg)
-                bs.text(w - 2, row, 2, "  ", e.swatch, colors.white)
-                bs.text(w, row, 1, " ", bg, fg)
+                gfx.bs.text(1, row, w - 3, pad(text, w - 3), bg, fg)
+                gfx.bs.text(w - 2, row, 2, "  ", e.swatch, colors.white)
+                gfx.bs.text(w, row, 1, " ", bg, fg)
             else
-                bs.text(1, row, w, pad(text, w), bg, fg)
+                gfx.bs.text(1, row, w, pad(text, w), bg, fg)
             end
         end
     end
@@ -2189,10 +2189,10 @@ local function drawListBasalt(entries, sel, top)
         local span = visible - thumb
         local pos = math.floor((top - 1) / (total - visible) * span + 0.5)
         for i = 1, visible do
-            bs.text(W, i + 1, 1, " ", (i > pos and i <= pos + thumb) and colors.lightGray or colors.gray, colors.white)
+            gfx.bs.text(W, i + 1, 1, " ", (i > pos and i <= pos + thumb) and colors.lightGray or colors.gray, colors.white)
         end
     end
-    bs.flush()
+    gfx.bs.flush()
 end
 
 local function drawList(title, entries, sel, top, buttons)
@@ -2200,7 +2200,7 @@ local function drawList(title, entries, sel, top, buttons)
     term.setTextColor(colors.white)
     term.clear()
     header(title)
-    if bs.try(drawListBasalt, entries, sel, top) then
+    if gfx.bs.try(gfx.bs.drawListBasalt, entries, sel, top) then
         footerButtons(buttons)
         return
     end
@@ -2303,15 +2303,15 @@ local function drawCard(y, lines, stripe, fg)
     local maxRows = math.max(1, H - y - 3)
     while #rows > maxRows do table.remove(rows) end
     local h = #rows + 2
-    if bs.try(function()
+    if gfx.bs.try(function()
         local stripeColor = stripe or colors.lightBlue
         local textColor = fg or colors.white
         for n = 0, h - 1 do
-            bs.text(2, y + n, 1, " ", stripeColor, colors.white)
+            gfx.bs.text(2, y + n, 1, " ", stripeColor, colors.white)
             local line = rows[n] and (" " .. rows[n]) or ""
-            bs.text(3, y + n, W - 3, pad(line, W - 3), colors.gray, textColor)
+            gfx.bs.text(3, y + n, W - 3, pad(line, W - 3), colors.gray, textColor)
         end
-        bs.flush()
+        gfx.bs.flush()
     end) then return y + h end
     fillRect(2, y, W - 1, y + h - 1, colors.gray)
     fillRect(2, y, 2, y + h - 1, stripe or colors.lightBlue)
@@ -2580,7 +2580,6 @@ local function setLink(mode)
 end
 
 local barRow = nil
-local barBasalt = false   -- true when the bar is the Basalt widget
 
 local function drawTransfer(title, lines)
     term.setBackgroundColor(colors.black)
@@ -2590,38 +2589,38 @@ local function drawTransfer(title, lines)
     local y = drawCard(3, lines, colors.lightBlue, colors.white)
     barRow = math.min(y + 1, H - 3)
     footerButtons({ { tag = "Q", label = "Cancel", k = "q" } })
-    barBasalt = false
-    if bs.try(function()
-        if not bs.bar then
-            local f = bs.frame
+    gfx.bs.barOn = false
+    if gfx.bs.try(function()
+        if not gfx.bs.bar then
+            local f = gfx.bs.frame
             local fill = { el = f:addProgressBar(), c = {} }
             fill.el:setProgressColor(colors.lime)
             fill.el:setBackground(colors.gray)
-            bs.bar = { fill = fill, pct = bs.newLabel(f) }
+            gfx.bs.bar = { fill = fill, pct = gfx.bs.newLabel(f) }
         end
-        local b = bs.bar
+        local b = gfx.bs.bar
         b.fill.el:setPosition(3, barRow); b.fill.el:setSize(W - 4, 1)
         b.fill.el:setProgress(0)
         b.fill.el:setZ(3)
         if b.fill.c.vis ~= true then b.fill.el:setVisible(true); b.fill.c.vis = true end
         b.pct.c = {}
-        bs.put(b.pct, math.floor((W - 3) / 2) + 1, barRow + 1, 3, "0% ", colors.black, colors.white)
-        bs.flush()
-    end) then barBasalt = true end
+        gfx.bs.put(b.pct, math.floor((W - 3) / 2) + 1, barRow + 1, 3, "0% ", colors.black, colors.white)
+        gfx.bs.flush()
+    end) then gfx.bs.barOn = true end
 end
 
 local function drawBar(frac)
     if not barRow then return end
     frac = math.max(0, math.min(1, frac))
-    if barBasalt and bs.on() and bs.bar then
-        local ok = bs.try(function()
-            local b = bs.bar
+    if gfx.bs.barOn and gfx.bs.on() and gfx.bs.bar then
+        local ok = gfx.bs.try(function()
+            local b = gfx.bs.bar
             local pct = math.floor(frac * 100 + 0.5)
             b.fill.el:setProgress(pct)
             local label = pct .. "%"
             local lw = math.max(4, #label)
-            bs.put(b.pct, math.floor((W - lw) / 2) + 1, barRow + 1, lw, pad(label, lw), colors.black, colors.white)
-            bs.flush()
+            gfx.bs.put(b.pct, math.floor((W - lw) / 2) + 1, barRow + 1, lw, pad(label, lw), colors.black, colors.white)
+            gfx.bs.flush()
         end)
         if ok then return end
     end
@@ -4816,7 +4815,7 @@ local function logError(err)
     end
 end
 
-bs.logger = logError
+gfx.bs.logger = logError
 
 -- ── Basalt main menu ─────────────────────────────────────────────────────────
 -- With the Basalt engine, Basalt draws the main menu: the title bar and clock,
@@ -4873,7 +4872,7 @@ function bmenu.hideAll()
         end
     end
 end
-bs.foreign = bmenu.hideAll
+gfx.bs.foreign = bmenu.hideAll
 
 function bmenu.build()
     local frame = gfx.basalt.getMainFrame()
@@ -4899,6 +4898,7 @@ function bmenu.draw(entries, sel, top, buttons)
     local bar = colorValue(settings.barColor, colors.blue)
     local hl = colorValue(settings.highlight, colors.lightBlue)
 
+    do   -- scoped so these locals are freed before the row loop
     local title = settings.osName
     local ver = "v" .. VERSION
     local tfg = textOn(bar)
@@ -4913,6 +4913,7 @@ function bmenu.draw(entries, sel, top, buttons)
         bmenu.put(b.clock, " " .. clock .. " ", block, colors.white, W - #clock - 1, 1, #clock + 2)
     else
         bmenu.hide(b.clock)
+    end
     end
 
     local visible = math.min(H - 2, #b.rows)
@@ -5110,7 +5111,7 @@ local function main()
     -- One visit to the Basalt menu. Returns when a program should open.
     local function runBasalt()
         local basalt = gfx.basalt
-        bs.release()   -- the menu paints its own background again
+        gfx.bs.release()   -- the menu paints its own background again
         if not bmenu.w then bmenu.w = bmenu.build() end
         local failure = nil
         local started = nowSec()
