@@ -1451,51 +1451,6 @@ do
     end
 end
 
--- ── Menu icons ───────────────────────────────────────────────────────────────
--- Small icons, 6x3 Pixelbox pixels (3 text cells wide), drawn next to the main
--- menu items. # is the icon color, + a second shade, . is the background.
-
-do
-    local ICONS = {
-        shell    = { "#.....", ".#....", "#..###" },   -- terminal prompt >_
-        mail     = { "######", "##++##", "######" },   -- envelope
-        download = { "######", ".####.", "..##.." },   -- arrow pointing down
-        disk     = { "######", "#.++.#", "######" },   -- drive
-        gear     = { "#.##.#", ".#++#.", "#.##.#" },   -- cog
-        more     = { "......", "#.#.#.", "......" },   -- three dots
-        play     = { "##....", "####..", "##...." },   -- program
-        reboot   = { ".####+", "#....#", ".####." },   -- loop arrow
-        power    = { "..##..", "#.##.#", ".####." },   -- power button
-    }
-    local box = {}
-
-    function gfx.drawIcon(name, row, x, fg, sec, bg)
-        local pat = ICONS[name]
-        if not pat or not gfx.pb or not settings.graphics then return false end
-        local ok = pcall(function()
-            if not box.win then
-                box.win = window.create(term.current(), x, row, 3, 1, true)
-                box.box = gfx.pb.new(box.win, colors.black)
-            else
-                box.win.reposition(x, row)
-            end
-            local canvas = box.box.canvas
-            for py = 1, 3 do
-                local line = pat[py]
-                for px = 1, 6 do
-                    local ch = line:sub(px, px)
-                    canvas[py][px] = (ch == "#") and fg or ((ch == "+") and sec or bg)
-                end
-            end
-        end)
-        if not ok then
-            box.win, box.box = nil, nil
-            return false
-        end
-        return (pcall(box.box.render, box.box))
-    end
-end
-
 -- ── Network state ────────────────────────────────────────────────────────────
 
 local net = {
@@ -1765,52 +1720,32 @@ local function drawList(title, entries, sel, top, buttons)
     local scroll = #entries > visible
     local w = scroll and (W - 1) or W
     local hl = colorValue(settings.highlight, colors.lightBlue)
-    -- Rows with an icon get a 3 cell wide icon column. Every row of that list is
-    -- indented the same, so the labels line up.
-    local anyIcon = false
-    if gfx.pb and settings.graphics then
-        for _, e in ipairs(entries) do
-            if e.icon then anyIcon = true break end
-        end
-    end
-    local indent = anyIcon and 5 or 1
-    local lead = string.rep(" ", indent)
     for i = 1, visible do
         local idx = top + i - 1
         local e = entries[idx]
         if e then
             local row = i + 1
             if idx == sel then
-                local solid = #e.label + indent + 2
+                local solid = #e.label + 3
                 local fancy = solid < w - 3 and gfx.selectBar(row, solid, hl)
                 term.setBackgroundColor(hl)
                 term.setTextColor(textOn(hl))
                 term.setCursorPos(1, row)
                 if fancy then
-                    term.write(pad(lead .. e.label, solid))
+                    term.write(pad(" " .. e.label, solid))
                 else
-                    term.write(pad(lead .. e.label, w))
+                    term.write(pad(" " .. e.label, w))
                 end
             else
                 term.setBackgroundColor(colors.black)
                 term.setTextColor(e.color or colors.white)
                 term.setCursorPos(1, row)
-                term.write(pad(lead .. e.label, w))
+                term.write(pad(" " .. e.label, w))
             end
             if e.swatch then
                 term.setBackgroundColor(e.swatch)
                 term.setCursorPos(w - 2, row)
                 term.write("  ")
-            end
-            if anyIcon and e.icon then
-                local fg, sec, bg
-                if idx == sel then
-                    bg, fg = hl, textOn(hl)
-                    sec = (fg == colors.black) and colors.gray or colors.lightGray
-                else
-                    bg, fg, sec = colors.black, e.color or colors.white, colors.white
-                end
-                gfx.drawIcon(e.icon, row, 2, fg, sec, bg)
             end
         end
     end
@@ -3866,17 +3801,14 @@ local function scan()
     end)
 
     local list = {
-        { label = "Shell",             shell = true,      color = colors.cyan, icon = "shell" },
-        { label = "Messenger",         app = "messenger", color = colors.cyan, icon = "mail" },
-        { label = "Download",          app = "download",  color = colors.cyan, icon = "download" },
-        { label = "Disks and ROM",     app = "disks",     color = colors.cyan, icon = "disk" },
-        { label = "Settings",          app = "settings",  color = colors.cyan, icon = "gear" },
-        { label = "Others",            app = "others",    color = colors.cyan, icon = "more" },
+        { label = "Shell",             shell = true,      color = colors.cyan },
+        { label = "Messenger",         app = "messenger", color = colors.cyan },
+        { label = "Download",          app = "download",  color = colors.cyan },
+        { label = "Disks and ROM",     app = "disks",     color = colors.cyan },
+        { label = "Settings",          app = "settings",  color = colors.cyan },
+        { label = "Others",            app = "others",    color = colors.cyan },
     }
-    for _, p in ipairs(programs) do
-        p.icon = "play"
-        table.insert(list, p)
-    end
+    for _, p in ipairs(programs) do table.insert(list, p) end
 
     if showRom then
         local romPrograms = {}
@@ -3887,13 +3819,12 @@ local function scan()
         for _, p in ipairs(romPrograms) do
             p.label = "[ROM] " .. p.label:sub(#"rom/programs/" + 1)
             p.color = colors.yellow
-            p.icon = "play"
             table.insert(list, p)
         end
     end
 
-    table.insert(list, { label = "Reboot",   action = "reboot",   color = colors.orange, icon = "reboot" })
-    table.insert(list, { label = "Shutdown", action = "shutdown", color = colors.orange, icon = "power" })
+    table.insert(list, { label = "Reboot",   action = "reboot",   color = colors.orange })
+    table.insert(list, { label = "Shutdown", action = "shutdown", color = colors.orange })
     return list
 end
 
@@ -3965,7 +3896,7 @@ local function main()
             if item.app == "messenger" and unread > 0 then
                 label = label .. " (" .. unread .. ")"
             end
-            out[n] = { label = label, color = item.color, icon = item.icon }
+            out[n] = { label = label, color = item.color }
         end
         return out
     end
