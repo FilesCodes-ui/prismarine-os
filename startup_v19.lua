@@ -1,3 +1,12 @@
+-- REMINDER (local-variable limit fix):
+-- CC:Tweaked rejected this file with "function at line N has more than 200
+-- local variables". Its Lua engine seems to count the top-level locals against
+-- every function, so the top-level count has to stay well below 200.
+-- To save slots, the UPPERCASE constants now live in the table C (C.PROTO,
+-- C.CHUNK, C.APPS, ...) instead of being separate locals.
+-- When adding new constants, put them in C. If the error comes back, move more
+-- helpers into tables. buildLogo keeps its own local SRC/LOGO_W/LOGO_R/
+-- LOGO_SPLIT on purpose.
 --                ▐■                                      ▐■
 --                ▀                                       ▀
 -- ▀▄▓▓▓▄  ▄ ▄▓▄  ▄▒    ▄▓▓▄  ▄  ▄▓▄ ▄▓▄   ▄▓▓▄ █▄ ▄ ▄▓▄  ▄▒   ▄  ▄▓▄   ▄▓▓▄
@@ -17,12 +26,13 @@
 
 local W, H = term.getSize()
 
-local PROTO = "simpleos_msg"
-local FILE_PROTO = "simpleos_file"  -- Messenger file transfer
-local CHUNK = 8192               -- bytes per transfer packet
-local MAX_FILE = 1000000         -- largest file the Messenger will send
-local NAME_FILE = ".simpleos_name"
-local LOG_FILE = "simpleos_error.log"
+local C = {}   -- constants live here to save local-variable slots
+C.PROTO = "simpleos_msg"
+C.FILE_PROTO = "simpleos_file"  -- Messenger file transfer
+C.CHUNK = 8192               -- bytes per transfer packet
+C.MAX_FILE = 1000000         -- largest file the Messenger will send
+C.NAME_FILE = ".simpleos_name"
+C.LOG_FILE = "simpleos_error.log"
 
 local VERSION = "19"
 local SELF = (shell and shell.getRunningProgram and shell.getRunningProgram()) or "startup.lua"
@@ -30,10 +40,10 @@ if not SELF or SELF == "" then SELF = "startup.lua" end
 
 -- ── Settings ─────────────────────────────────────────────────────────────────
 
-local SETTINGS_FILE = ".simpleos_settings"
-local SECURE_FILE = ".simpleos_secureboot"
+C.SETTINGS_FILE = ".simpleos_settings"
+C.SECURE_FILE = ".simpleos_secureboot"
 
-local COLOR_CHOICES = {
+C.COLOR_CHOICES = {
     { name = "Blue",       value = colors.blue },
     { name = "Red",        value = colors.red },
     { name = "Green",      value = colors.green },
@@ -50,14 +60,14 @@ local COLOR_CHOICES = {
     { name = "Pink",       value = colors.pink },
 }
 
-local LIGHT = {}
+C.LIGHT = {}
 for _, c in ipairs({ colors.white, colors.lightGray, colors.yellow, colors.lime,
                      colors.pink, colors.lightBlue, colors.cyan, colors.orange }) do
-    LIGHT[c] = true
+    C.LIGHT[c] = true
 end
 
 local function colorValue(name, fallback)
-    for _, c in ipairs(COLOR_CHOICES) do
+    for _, c in ipairs(C.COLOR_CHOICES) do
         if c.name == name then return c.value end
     end
     return fallback
@@ -65,10 +75,10 @@ end
 
 -- Picks black or white text for a background color.
 local function textOn(bg)
-    return LIGHT[bg] and colors.black or colors.white
+    return C.LIGHT[bg] and colors.black or colors.white
 end
 
-local DEFAULT_SETTINGS = {
+C.DEFAULT_SETTINGS = {
     osName    = "Prismarine",
     barColor  = "Blue",
     highlight = "Light blue",
@@ -99,11 +109,11 @@ local settings = {}
 
 local function resetSettings()
     settings = {}
-    for k, v in pairs(DEFAULT_SETTINGS) do settings[k] = v end
+    for k, v in pairs(C.DEFAULT_SETTINGS) do settings[k] = v end
 end
 
 local function saveSettings()
-    local f = fs.open(SETTINGS_FILE, "w")
+    local f = fs.open(C.SETTINGS_FILE, "w")
     if f then
         f.write(textutils.serialize(settings))
         f.close()
@@ -112,14 +122,14 @@ end
 
 local function loadSettings()
     resetSettings()
-    if fs.exists(SETTINGS_FILE) then
-        local f = fs.open(SETTINGS_FILE, "r")
+    if fs.exists(C.SETTINGS_FILE) then
+        local f = fs.open(C.SETTINGS_FILE, "r")
         if f then
             local data = textutils.unserialize(f.readAll() or "")
             f.close()
             if type(data) == "table" then
                 for k, v in pairs(data) do
-                    if DEFAULT_SETTINGS[k] ~= nil and type(v) == type(DEFAULT_SETTINGS[k]) then
+                    if C.DEFAULT_SETTINGS[k] ~= nil and type(v) == type(C.DEFAULT_SETTINGS[k]) then
                         settings[k] = v
                     end
                 end
@@ -140,7 +150,7 @@ do
         for _, v in ipairs(list) do
             if settings[key] == v then return end
         end
-        settings[key] = DEFAULT_SETTINGS[key]
+        settings[key] = C.DEFAULT_SETTINGS[key]
     end
     oneOf("menuLogo", { "Off", "Corner", "Large" })
     oneOf("monMode", { "Mirror", "Dashboard", "Off" })
@@ -150,7 +160,7 @@ do
     settings.graphics = settings.uiEngine ~= "Basalt"
     if settings.monScale ~= "Auto" and settings.monScale ~= "Pixel"
         and not tonumber(settings.monScale) then
-        settings.monScale = DEFAULT_SETTINGS.monScale
+        settings.monScale = C.DEFAULT_SETTINGS.monScale
     end
 end
 
@@ -168,8 +178,8 @@ local showRom = settings.showRom
 
 -- ── Hashing and secure boot data ─────────────────────────────────────────────
 
-local SHA_K = { 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 }
-local SHA_H0 = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
+C.SHA_K = { 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 }
+C.SHA_H0 = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
 
 local function hex32(n)
     local out = ""
@@ -197,7 +207,7 @@ local function sha256(msg, tick)
         .. u32(math.floor(bits / M)) .. u32(bits % M)
 
     local h = {}
-    for n = 1, 8 do h[n] = SHA_H0[n] end
+    for n = 1, 8 do h[n] = C.SHA_H0[n] end
     local w = {}
     local blocks = 0
 
@@ -219,7 +229,7 @@ local function sha256(msg, tick)
         for j = 1, 64 do
             local S1 = bxor(rrotate(e, 6), rrotate(e, 11), rrotate(e, 25))
             local ch = bxor(band(e, f), band(bnot(e), g))
-            local t1 = (hh + S1 + ch + SHA_K[j] + w[j]) % M
+            local t1 = (hh + S1 + ch + C.SHA_K[j] + w[j]) % M
             local S0 = bxor(rrotate(a, 2), rrotate(a, 13), rrotate(a, 22))
             local maj = bxor(band(a, b), band(a, c), band(b, c))
             local t2 = (S0 + maj) % M
@@ -269,8 +279,8 @@ local function hashFile(path, tick)
 end
 
 local function loadSecure()
-    if not fs.exists(SECURE_FILE) then return nil end
-    local text = readFile(SECURE_FILE)
+    if not fs.exists(C.SECURE_FILE) then return nil end
+    local text = readFile(C.SECURE_FILE)
     local data = text and textutils.unserialize(text)
     if type(data) == "table" and data.fileHash and data.salt and data.passHash then
         return data
@@ -279,7 +289,7 @@ local function loadSecure()
 end
 
 local function saveSecure(data)
-    local f = fs.open(SECURE_FILE, "w")
+    local f = fs.open(C.SECURE_FILE, "w")
     if f then
         f.write(textutils.serialize(data))
         f.close()
@@ -322,38 +332,38 @@ local gfx = {
     beatOn  = true,  -- false while a plain shell program has the screen
 }
 
-local PB_DIR  = ".prismarine"
-local PB_FILE = PB_DIR .. "/pixelbox_lite.lua"
+C.PB_DIR  = ".prismarine"
+C.PB_FILE = C.PB_DIR .. "/pixelbox_lite.lua"
 -- Pinned to one commit and checked against a SHA-256, so the file that runs at
 -- boot is exactly the one this OS was written for.
-local PB_URL  = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/82098c8dca939b7689f119d0a577c311d4a09281/pixelbox_lite.lua"
-local PB_HASH = "e9923dc24ed6d968de668f42a3c324d0957778a709d93bc9190617c32889de99"
+C.PB_URL  = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/82098c8dca939b7689f119d0a577c311d4a09281/pixelbox_lite.lua"
+C.PB_HASH = "e9923dc24ed6d968de668f42a3c324d0957778a709d93bc9190617c32889de99"
 
 -- Basalt is NOT part of this file. It is downloaded from its official
 -- repository only when the player picks it. This is the same file the official
 -- installer (install.lua -f) downloads. The branch moves, so it cannot be
 -- pinned to a hash like Pixelbox_Lite. It is checked to be a loadable Basalt.
-gfx.basaltFile = PB_DIR .. "/basalt.lua"
+gfx.basaltFile = C.PB_DIR .. "/basalt.lua"
 gfx.basaltUrl  = "https://raw.githubusercontent.com/Pyroxenium/Basalt2/refs/heads/main/release/basalt-full.lua"
 
 local function nowSec() return os.epoch("utc") / 1000 end
 
 -- ── Monitor mirroring ────────────────────────────────────────────────────────
 
-local TEE_ALL = { "write", "blit", "clear", "clearLine", "scroll", "setCursorPos",
+C.TEE_ALL = { "write", "blit", "clear", "clearLine", "scroll", "setCursorPos",
     "setCursorBlink", "setTextColor", "setTextColour", "setBackgroundColor",
     "setBackgroundColour", "setPaletteColor", "setPaletteColour" }
-local TEE_ONE = { "getCursorPos", "getCursorBlink", "getSize", "isColor", "isColour",
+C.TEE_ONE = { "getCursorPos", "getCursorBlink", "getSize", "isColor", "isColour",
     "getTextColor", "getTextColour", "getBackgroundColor", "getBackgroundColour",
     "getPaletteColor", "getPaletteColour" }
 
 -- A terminal object that sends every call to the main window and to each
 -- mirrored monitor. Answers to questions come from the main window.
 local tee = {}
-for _, name in ipairs(TEE_ONE) do
+for _, name in ipairs(C.TEE_ONE) do
     tee[name] = function(...) return gfx.win[name](...) end
 end
-for _, name in ipairs(TEE_ALL) do
+for _, name in ipairs(C.TEE_ALL) do
     tee[name] = function(...)
         local a, b, c = gfx.win[name](...)
         local list = gfx.mirrors
@@ -365,7 +375,7 @@ for _, name in ipairs(TEE_ALL) do
     end
 end
 
-local SCALES = { 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5 }
+C.SCALES = { 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5 }
 
 -- Picks the biggest text scale where the whole screen still fits.
 local function chooseScale(mon)
@@ -384,7 +394,7 @@ local function chooseScale(mon)
             return
         end
     end
-    for _, s in ipairs(SCALES) do
+    for _, s in ipairs(C.SCALES) do
         if pcall(mon.setTextScale, s) then
             local mw, mh = mon.getSize()
             if mw >= W and mh >= H then return end
@@ -621,7 +631,7 @@ local function hsv(h, s, v)
 end
 
 -- Choices for the colored lower half of the logo. Any #RRGGBB also works.
-local LOGO_COLORS = {
+C.LOGO_COLORS = {
     { name = "Blue",       rgb = { 63, 85, 255 } },
     { name = "Prismarine", rgb = { 70, 214, 178 } },
     { name = "Aqua",       rgb = { 0, 200, 255 } },
@@ -646,7 +656,7 @@ local function parseHex(text)
 end
 
 local function logoPreset(name)
-    for i, c in ipairs(LOGO_COLORS) do
+    for i, c in ipairs(C.LOGO_COLORS) do
         if c.name == name then return c, i end
     end
 end
@@ -658,7 +668,7 @@ local function logoRGB(t)
         if p.rainbow then return hsv((t or 0) * 0.1, 0.72, 1) end
         return p.rgb
     end
-    return parseHex(settings.logoColor) or LOGO_COLORS[1].rgb
+    return parseHex(settings.logoColor) or C.LOGO_COLORS[1].rgb
 end
 
 local function logoName()
@@ -829,12 +839,12 @@ end
 -- Loads the downloaded library after checking its SHA-256.
 function gfx.loadPixelbox(tick)
     if gfx.pb then return true end
-    if not fs.exists(PB_FILE) then
+    if not fs.exists(C.PB_FILE) then
         gfx.err = "not downloaded"
         return false
     end
-    local text = readFile(PB_FILE)
-    if not text or sha256(text, tick) ~= PB_HASH then
+    local text = readFile(C.PB_FILE)
+    if not text or sha256(text, tick) ~= C.PB_HASH then
         gfx.err = "checksum mismatch"
         return false
     end
@@ -862,7 +872,7 @@ end
 -- Downloads Pixelbox_Lite. Returns true, or false and a reason.
 function gfx.download()
     if not http then return false, "HTTP is disabled on this server" end
-    local resp, err = http.get(PB_URL, nil, true)
+    local resp, err = http.get(C.PB_URL, nil, true)
     if not resp then return false, tostring(err) end
     local status = resp.getResponseCode()
     local body = resp.readAll()
@@ -870,12 +880,12 @@ function gfx.download()
     if status ~= 200 or not body or body == "" then
         return false, "Status " .. tostring(status)
     end
-    if sha256(body) ~= PB_HASH then
+    if sha256(body) ~= C.PB_HASH then
         return false, "Checksum mismatch, file not saved"
     end
-    if not fs.exists(PB_DIR) then fs.makeDir(PB_DIR) end
-    local f = fs.open(PB_FILE, "wb")
-    if not f then return false, "Cannot write " .. PB_FILE end
+    if not fs.exists(C.PB_DIR) then fs.makeDir(C.PB_DIR) end
+    local f = fs.open(C.PB_FILE, "wb")
+    if not f then return false, "Cannot write " .. C.PB_FILE end
     f.write(body)
     f.close()
     return true
@@ -927,8 +937,8 @@ function gfx.downloadBasalt(onFrame)
     if not fn then return false, "Not valid Lua: " .. tostring(err) end
     fn = nil
 
-    if not fs.exists(PB_DIR) then fs.makeDir(PB_DIR) end
-    if fs.getFreeSpace(PB_DIR) < #body + 2048 then
+    if not fs.exists(C.PB_DIR) then fs.makeDir(C.PB_DIR) end
+    if fs.getFreeSpace(C.PB_DIR) < #body + 2048 then
         return false, "Not enough free space for Basalt"
     end
     -- Write beside the target first, so a failed write never leaves half a file.
@@ -997,9 +1007,9 @@ function gfx.prepareBasalt(onFrame)
 end
 
 -- 4x4 ordered dither threshold in (0, 1).
-local BAYER = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } }
+C.BAYER = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } }
 local function thr(x, y)
-    return (BAYER[(y - 1) % 4 + 1][(x - 1) % 4 + 1] + 0.5) / 16
+    return (C.BAYER[(y - 1) % 4 + 1][(x - 1) % 4 + 1] + 0.5) / 16
 end
 
 -- Header: solid behind the title, then a dithered fade to black.
@@ -1145,7 +1155,7 @@ end
 -- Digits: 0 blank, 1-4 light to solid shade, 5 lower half block, 6 upper half
 -- block. The first four rows are the gray half, the last four the colored half.
 
-local LOGO_ROWS = {
+C.LOGO_ROWS = {
     "0111150011115011051110511511150051115001111501101111505111",
     "0110110011011011011000110110110011011001101101101101101106",
     "0222260022226022062250220220220022222002222602202202202220",
@@ -1155,29 +1165,29 @@ local LOGO_ROWS = {
     "0220000022022022000220220000220022022002202202202202202205",
     "5335000533033033033360330000330533033053303303303303306333",
 }
-local LOGO_W, LOGO_R = 58, #LOGO_ROWS
-local SHADE = { [0] = 0, 0.34, 0.58, 0.80, 1.0 }
-local ROWBASE = { 0.34, 0.34, 0.58, 0.85, 0.50, 0.34, 0.58, 0.85 }
-local LOGO_SPLIT = 8 -- half-rows 1..8 are gray, 9..16 are colored
+C.LOGO_W, C.LOGO_R = 58, #C.LOGO_ROWS
+C.SHADE = { [0] = 0, 0.34, 0.58, 0.80, 1.0 }
+C.ROWBASE = { 0.34, 0.34, 0.58, 0.85, 0.50, 0.34, 0.58, 0.85 }
+C.LOGO_SPLIT = 8 -- half-rows 1..8 are gray, 9..16 are colored
 
 -- SRC[halfRow][col] = brightness 0..1
-local SRC = {}
-for r = 1, LOGO_R do
+C.SRC = {}
+for r = 1, C.LOGO_R do
     local top, bot = {}, {}
-    local row = LOGO_ROWS[r]
-    for x = 1, LOGO_W do
+    local row = C.LOGO_ROWS[r]
+    for x = 1, C.LOGO_W do
         local ch = tonumber(row:sub(x, x))
         local tl, bl = 0, 0
         if ch >= 1 and ch <= 4 then
-            tl, bl = SHADE[ch], SHADE[ch]
+            tl, bl = C.SHADE[ch], C.SHADE[ch]
         elseif ch == 5 then
-            bl = ROWBASE[r]
+            bl = C.ROWBASE[r]
         elseif ch == 6 then
-            tl = ROWBASE[r]
+            tl = C.ROWBASE[r]
         end
         top[x], bot[x] = tl, bl
     end
-    SRC[r * 2 - 1], SRC[r * 2] = top, bot
+    C.SRC[r * 2 - 1], C.SRC[r * 2] = top, bot
 end
 
 local logoCache = {}
@@ -1186,7 +1196,7 @@ local logoCache = {}
 -- 2x3 Pixelbox pixels, so one art character is 2x3 pixels at full size.
 -- art is the PRISMARINE logo unless another art table is given (gfx.wordArt).
 local function buildLogo(dw, art)
-    art = art or { src = SRC, w = LOGO_W, r = LOGO_R, split = LOGO_SPLIT, key = "prism" }
+    art = art or { src = C.SRC, w = C.LOGO_W, r = C.LOGO_R, split = C.LOGO_SPLIT, key = "prism" }
     local SRC, LOGO_W, LOGO_R, LOGO_SPLIT = art.src, art.w, art.r, art.split
     local cacheKey = art.key .. ":" .. dw
     if logoCache[cacheKey] then return logoCache[cacheKey] end
@@ -1683,8 +1693,8 @@ local net = {
 }
 
 local function loadName()
-    if fs.exists(NAME_FILE) then
-        local f = fs.open(NAME_FILE, "r")
+    if fs.exists(C.NAME_FILE) then
+        local f = fs.open(C.NAME_FILE, "r")
         if f then
             local n = f.readLine()
             f.close()
@@ -1695,7 +1705,7 @@ local function loadName()
 end
 
 local function saveName(n)
-    local f = fs.open(NAME_FILE, "w")
+    local f = fs.open(C.NAME_FILE, "w")
     if f then
         f.write(n)
         f.close()
@@ -1743,7 +1753,7 @@ local function unreadTotal()
 end
 
 local function handleNet(sender, msg, protocol)
-    if protocol == FILE_PROTO then
+    if protocol == C.FILE_PROTO then
         -- Only offers are handled here. Chunks and acknowledgements belong to
         -- the send and receive screens.
         if type(msg) ~= "table" or type(msg.xid) ~= "string" then return end
@@ -1751,7 +1761,7 @@ local function handleNet(sender, msg, protocol)
             local size, chunk, sum, chunks = msg.size, msg.chunk, msg.sum, msg.chunks
             if type(msg.name) ~= "string" or type(size) ~= "number" or type(chunk) ~= "number"
                 or type(sum) ~= "number" or type(chunks) ~= "number" then return end
-            if size < 1 or size > MAX_FILE or chunk < 256 or chunk > 16384 then return end
+            if size < 1 or size > C.MAX_FILE or chunk < 256 or chunk > 16384 then return end
             if chunks ~= math.ceil(size / chunk) then return end
             pruneOffers()
             for _, o in ipairs(net.offers) do
@@ -1772,11 +1782,11 @@ local function handleNet(sender, msg, protocol)
         end
         return
     end
-    if protocol ~= PROTO or type(msg) ~= "table" then return end
+    if protocol ~= C.PROTO or type(msg) ~= "table" then return end
     local name = tostring(msg.name or "Unknown")
     if msg.type == "discover" then
         net.peers[sender] = { name = name }
-        pcall(rednet.send, sender, { type = "hello", name = myName }, PROTO)
+        pcall(rednet.send, sender, { type = "hello", name = myName }, C.PROTO)
     elseif msg.type == "hello" then
         net.peers[sender] = { name = name }
     elseif msg.type == "msg" then
@@ -2428,7 +2438,7 @@ end
 
 local function discover(wait)
     net.peers = {}
-    pcall(rednet.broadcast, { type = "discover", name = myName }, PROTO)
+    pcall(rednet.broadcast, { type = "discover", name = myName }, C.PROTO)
     local timer = os.startTimer(wait)
     while true do
         local ev, a, b, c = os.pullEventRaw()
@@ -2491,9 +2501,9 @@ local function chat(entry)
     local function send()
         if input == "" then return end
         if entry.key == "all" then
-            pcall(rednet.broadcast, { type = "msg", name = myName, text = input, all = true }, PROTO)
+            pcall(rednet.broadcast, { type = "msg", name = myName, text = input, all = true }, C.PROTO)
         else
-            pcall(rednet.send, entry.id, { type = "msg", name = myName, text = input }, PROTO)
+            pcall(rednet.send, entry.id, { type = "msg", name = myName, text = input }, C.PROTO)
         end
         addHistory(entry.key, { who = "You", text = input, mine = true })
         input = ""
@@ -2646,10 +2656,10 @@ local function awaitReply(xid, from, timeout, want)
     while true do
         local ev, a, b, c = os.pullEventRaw()
         if ev == "rednet_message" then
-            if c == FILE_PROTO and a == from and type(b) == "table" and b.xid == xid and want(b) then
+            if c == C.FILE_PROTO and a == from and type(b) == "table" and b.xid == xid and want(b) then
                 os.cancelTimer(timer)
                 return b
-            elseif c ~= FILE_PROTO or a ~= from then
+            elseif c ~= C.FILE_PROTO or a ~= from then
                 handleNet(a, b, c)
             end
         elseif ev == "timer" and a == timer then
@@ -2666,10 +2676,10 @@ end
 -- Returns true and a note, or false and the reason it failed.
 local function transmit(id, peerName, name, data, sum)
     local xid = os.getComputerID() .. "-" .. os.epoch("utc")
-    local chunks = math.ceil(#data / CHUNK)
+    local chunks = math.ceil(#data / C.CHUNK)
     local function send(m)
         m.xid = xid
-        pcall(rednet.send, id, m, FILE_PROTO)
+        pcall(rednet.send, id, m, C.FILE_PROTO)
     end
     local function isCancel(m) return m.type == "cancel" or m.type == "decline" end
 
@@ -2678,7 +2688,7 @@ local function transmit(id, peerName, name, data, sum)
         "To: " .. peerName,
         "Waiting for them to accept...",
     })
-    send({ type = "offer", name = name, size = #data, chunk = CHUNK, chunks = chunks, sum = sum, from = myName })
+    send({ type = "offer", name = name, size = #data, chunk = C.CHUNK, chunks = chunks, sum = sum, from = myName })
     local r = awaitReply(xid, id, 60, function(m) return m.type == "accept" or isCancel(m) end)
     if r == "cancel" then send({ type = "cancel" }) return false, "Cancelled." end
     if not r then
@@ -2694,7 +2704,7 @@ local function transmit(id, peerName, name, data, sum)
     })
     drawBar(0)
     for n = 1, chunks do
-        local piece = data:sub((n - 1) * CHUNK + 1, n * CHUNK)
+        local piece = data:sub((n - 1) * C.CHUNK + 1, n * C.CHUNK)
         local tries = 0
         while true do
             send({ type = "chunk", n = n, data = piece })
@@ -2732,8 +2742,8 @@ local function sendFile(id, peerName, given)
     if size == 0 then
         showMessage("Send file", { "That file is empty." }, colors.red)
         return
-    elseif size > MAX_FILE then
-        showMessage("Send file", { "Files can be up to " .. fmtSize(MAX_FILE) .. "." }, colors.red)
+    elseif size > C.MAX_FILE then
+        showMessage("Send file", { "Files can be up to " .. fmtSize(C.MAX_FILE) .. "." }, colors.red)
         return
     end
 
@@ -2770,7 +2780,7 @@ end
 local function receiveFile(offer)
     local function send(m)
         m.xid = offer.xid
-        pcall(rednet.send, offer.from, m, FILE_PROTO)
+        pcall(rednet.send, offer.from, m, C.FILE_PROTO)
     end
 
     if offer.size + 512 > fs.getFreeSpace("") then
@@ -2874,7 +2884,7 @@ local function inboxApp()
             accept(table.remove(net.offers, sel))
         elseif i.k == "d" then
             local o = table.remove(net.offers, sel)
-            pcall(rednet.send, o.from, { type = "decline", xid = o.xid, why = "They declined." }, FILE_PROTO)
+            pcall(rednet.send, o.from, { type = "decline", xid = o.xid, why = "They declined." }, C.FILE_PROTO)
         elseif i.k == "q" then
             return
         elseif i.click and i.y >= 2 and i.y <= H - 1 and entries[top + i.y - 2] then
@@ -3543,7 +3553,7 @@ end
 
 local function ensureGraphics()
     if gfx.pb then return true end
-    if not fs.exists(PB_FILE) then
+    if not fs.exists(C.PB_FILE) then
         showBusy("Pixelbox_Lite", "Downloading Pixelbox_Lite...")
         local ok, err = gfx.download()
         if not ok then
@@ -3830,7 +3840,7 @@ local function logoStudio()
     end
 
     local original = settings.logoColor
-    local count = #LOGO_COLORS
+    local count = #C.LOGO_COLORS
     local _, hexNow = parseHex(settings.logoColor)
     local custom = hexNow
     local _, presetIdx = logoPreset(settings.logoColor)
@@ -3839,13 +3849,13 @@ local function logoStudio()
 
     local function apply()
         if idx <= count then
-            settings.logoColor = LOGO_COLORS[idx].name
+            settings.logoColor = C.LOGO_COLORS[idx].name
         elseif custom then
             settings.logoColor = custom
         end
     end
     local function label()
-        if idx <= count then return LOGO_COLORS[idx].name end
+        if idx <= count then return C.LOGO_COLORS[idx].name end
         return "Custom " .. (custom or "(press H)")
     end
 
@@ -4002,7 +4012,7 @@ local function unenrollSecureBoot()
         showMessage("Secure boot", { "Wrong password." }, colors.red)
         return
     end
-    fs.delete(SECURE_FILE)
+    fs.delete(C.SECURE_FILE)
     showMessage("Secure boot", { "Un-enrolled. Boot no longer asks for a password." }, colors.lime)
 end
 
@@ -4236,9 +4246,9 @@ local function settingsApp()
 
     local function chooseColor(title, current)
         local names = {}
-        for n, c in ipairs(COLOR_CHOICES) do names[n] = c.name end
+        for n, c in ipairs(C.COLOR_CHOICES) do names[n] = c.name end
         local idx = pickMenu(title, names)
-        if idx then return COLOR_CHOICES[idx].name end
+        if idx then return C.COLOR_CHOICES[idx].name end
         return current
     end
 
@@ -4437,13 +4447,13 @@ end
 -- Prismarine Shell is not shipped inside this file. The first time someone
 -- opens Shell, the newest p.shell_v<number>.lua is downloaded from the update
 -- repo into a hidden folder. The shell updates itself from then on.
-local SHELL_FILE = ".prismshell/pshell.lua"
-local SHELL_PREFIX = "p.shell_v"
+C.SHELL_FILE = ".prismshell/pshell.lua"
+C.SHELL_PREFIX = "p.shell_v"
 
 -- Returns the path to run, plus an optional banner. Returns nil to stay in the menu.
 local function ensureShell()
-    if fs.exists(SHELL_FILE) and not fs.isDir(SHELL_FILE) then
-        return "/" .. SHELL_FILE
+    if fs.exists(C.SHELL_FILE) and not fs.isDir(C.SHELL_FILE) then
+        return "/" .. C.SHELL_FILE
     end
 
     local why
@@ -4451,11 +4461,11 @@ local function ensureShell()
         why = "HTTP is disabled on this server."
     else
         showBusy("Shell", "Downloading Prismarine Shell...")
-        local versions, err = listVersions(SHELL_PREFIX)
+        local versions, err = listVersions(C.SHELL_PREFIX)
         if not versions then
             why = err
         else
-            local body, err2 = httpGet(versionUrl(versions[1], SHELL_PREFIX) .. "?cb=" .. os.epoch("utc"))
+            local body, err2 = httpGet(versionUrl(versions[1], C.SHELL_PREFIX) .. "?cb=" .. os.epoch("utc"))
             if not body then
                 why = err2
             else
@@ -4464,13 +4474,13 @@ local function ensureShell()
                     why = "The downloaded file has a syntax error: " .. tostring(syntaxErr)
                 else
                     fs.makeDir(".prismshell")
-                    local f = fs.open(SHELL_FILE, "wb")
+                    local f = fs.open(C.SHELL_FILE, "wb")
                     if f then
                         f.write(body)
                         f.close()
-                        return "/" .. SHELL_FILE
+                        return "/" .. C.SHELL_FILE
                     end
-                    why = "Cannot write " .. SHELL_FILE .. "."
+                    why = "Cannot write " .. C.SHELL_FILE .. "."
                 end
             end
         end
@@ -4489,8 +4499,8 @@ end
 -- The Downloads app is not shipped inside this file either. The first time
 -- Download is opened, official_downloads.lua is fetched from the update repo
 -- into a hidden folder. The app can update itself from its own menu.
-local DL_FILE = ".prismdl/downloads.lua"
-local DL_REMOTE = "official_downloads.lua"
+C.DL_FILE = ".prismdl/downloads.lua"
+C.DL_REMOTE = "official_downloads.lua"
 
 local function rawUrl(name)
     local repo, branch = repoParts()
@@ -4500,13 +4510,13 @@ end
 -- Downloads the app into DL_FILE. Returns true, or false and a reason.
 local function fetchDownloads()
     if not http then return false, "HTTP is disabled on this server." end
-    local body, why = httpGet(rawUrl(DL_REMOTE) .. "?cb=" .. os.epoch("utc"))
+    local body, why = httpGet(rawUrl(C.DL_REMOTE) .. "?cb=" .. os.epoch("utc"))
     if not body then return false, tostring(why) end
     local fn, syntaxErr = load(body, "=downloads")
     if not fn then return false, "The downloaded file has a syntax error: " .. tostring(syntaxErr) end
     fs.makeDir(".prismdl")
-    local f = fs.open(DL_FILE, "wb")
-    if not f then return false, "Cannot write " .. DL_FILE .. "." end
+    local f = fs.open(C.DL_FILE, "wb")
+    if not f then return false, "Cannot write " .. C.DL_FILE .. "." end
     f.write(body)
     f.close()
     return true
@@ -4539,13 +4549,13 @@ local function makeApi()
         restorePalette = restorePalette,
         size = function() return W, H end,
         resize = function() W, H = term.getSize() end,
-        DL_FILE = DL_FILE, SELF = SELF,
-        SETTINGS_FILE = SETTINGS_FILE, SECURE_FILE = SECURE_FILE,
+        DL_FILE = C.DL_FILE, SELF = SELF,
+        SETTINGS_FILE = C.SETTINGS_FILE, SECURE_FILE = C.SECURE_FILE,
     }
 end
 
 local function downloadApp()
-    if not fs.exists(DL_FILE) or fs.isDir(DL_FILE) then
+    if not fs.exists(C.DL_FILE) or fs.isDir(C.DL_FILE) then
         showBusy("Download", "Getting the Downloads app...")
         local ok, why = fetchDownloads()
         if not ok then
@@ -4557,10 +4567,10 @@ local function downloadApp()
             return
         end
     end
-    local fn, err = loadfile(DL_FILE, "t", programEnv(DL_FILE))
+    local fn, err = loadfile(C.DL_FILE, "t", programEnv(C.DL_FILE))
     if not fn then
         showMessage("Download", { "The Downloads app is damaged.", tostring(err), "Open Download again to fetch a new copy." }, colors.red)
-        fs.delete(DL_FILE)
+        fs.delete(C.DL_FILE)
         return
     end
     local api = makeApi()
@@ -4570,7 +4580,7 @@ local function downloadApp()
     end
 end
 
-local APPS = {
+C.APPS = {
     messenger = messengerApp,
     download  = downloadApp,
     disks     = diskApp,
@@ -4694,7 +4704,7 @@ local function programApp()
         end
     end
 end
-APPS.programs = programApp
+C.APPS.programs = programApp
 
 local function scan()
     local programs = {}
@@ -4741,7 +4751,7 @@ local function launch(item)
         return
     elseif item.app then
         restorePalette()
-        local ok, err = pcall(APPS[item.app])
+        local ok, err = pcall(C.APPS[item.app])
         restorePalette()
         resetTerm()
         if not ok then
@@ -4808,7 +4818,7 @@ end
 
 -- Keeps a log of errors. The menu restarts after a crash.
 local function logError(err)
-    local f = fs.open(LOG_FILE, "a")
+    local f = fs.open(C.LOG_FILE, "a")
     if f then
         f.writeLine(os.date("%Y-%m-%d %H:%M") .. "  " .. tostring(err))
         f.close()
@@ -5241,7 +5251,7 @@ end
 -- it. This happens whichever UI engine is picked, because the loading screens
 -- always use it. Returns true when Pixelbox_Lite is loaded.
 local function loadGraphics()
-    if not fs.exists(PB_FILE) then
+    if not fs.exists(C.PB_FILE) then
         if not http then
             gfx.err = "HTTP is disabled"
             return false
@@ -5269,7 +5279,7 @@ local function loadGraphics()
                 tostring(gfx.err),
                 "",
                 "Starting without pixel graphics.",
-                "Delete /" .. PB_DIR .. " to download it again.",
+                "Delete /" .. C.PB_DIR .. " to download it again.",
             }, colors.yellow)
         end
         return false
@@ -5364,6 +5374,6 @@ while true do
     showMessage(settings.osName .. " error", {
         tostring(err),
         "",
-        "Saved to " .. LOG_FILE,
+        "Saved to " .. C.LOG_FILE,
     }, colors.red)
 end
