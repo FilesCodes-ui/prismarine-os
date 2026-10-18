@@ -4562,6 +4562,9 @@ local bmenu = { w = nil }   -- the Basalt menu; w holds its widgets once built
 function bmenu.label(frame)
     local el = frame:addLabel()
     el:setAutoSize(false)
+    -- Basalt labels are transparent by default. Every label here paints its
+    -- own background, so the menu looks the same as the Pixelbox_Lite one.
+    el:setBackgroundEnabled(true)
     return { el = el, c = {} }
 end
 
@@ -4593,6 +4596,8 @@ function bmenu.build()
     b.title = bmenu.label(frame)
     b.clock = bmenu.label(frame)
     b.foot = bmenu.label(frame)
+    b.info = bmenu.label(frame)
+    b.hint = bmenu.label(frame)
     for i = 1, 6 do
         b.tags[i] = bmenu.label(frame)
         b.labels[i] = bmenu.label(frame)
@@ -4606,10 +4611,17 @@ function bmenu.draw(entries, sel, top, buttons)
     local hl = colorValue(settings.highlight, colors.lightBlue)
 
     local title = settings.osName
-    bmenu.put(b.title, pad(" " .. title, W), bar, textOn(bar), 1, 1, W)
+    local ver = "v" .. VERSION
+    local tfg = textOn(bar)
+    -- Left: a lighter block holding the name. Right: the clock. A thin
+    -- darker strip along the bottom of the bar is not possible in text mode,
+    -- so the bar stays one row and the contrast comes from the name block.
+    local block = (bar == colors.black) and colors.gray or colors.black
+    local name = " " .. title .. " "
+    bmenu.put(b.title, pad(name .. " " .. ver, W), bar, tfg, 1, 1, W)
     local clock = clockText()
-    if clock ~= "" and W >= #title + #clock + 4 then
-        bmenu.put(b.clock, clock, bar, textOn(bar), W - #clock, 1, #clock)
+    if clock ~= "" and W >= #title + #clock + #ver + 8 then
+        bmenu.put(b.clock, " " .. clock .. " ", block, colors.white, W - #clock - 1, 1, #clock + 2)
     else
         bmenu.hide(b.clock)
     end
@@ -4621,7 +4633,10 @@ function bmenu.draw(entries, sel, top, buttons)
         local e = entries[top + i - 1]
         if i <= visible and e then
             local on = (top + i - 1) == sel
-            bmenu.put(b.rows[i], pad(" " .. e.label, w), on and hl or colors.black,
+            -- Selected row: full width highlight and a pointer in the gutter.
+            -- Other rows keep their own color on black, same text column.
+            local text = (on and "\16 " or "  ") .. e.label
+            bmenu.put(b.rows[i], pad(text, w), on and hl or colors.black,
                 on and textOn(hl) or (e.color or colors.white), 1, i + 1, w)
         else
             bmenu.hide(b.rows[i])
@@ -4638,6 +4653,33 @@ function bmenu.draw(entries, sel, top, buttons)
         else
             bmenu.hide(b.bars[i])
         end
+    end
+
+    -- One line of help for the selected entry, in the free row above the
+    -- button bar, when there is room for it.
+    local hints = {
+        shell = "Command line with the Prismarine helpers",
+        messenger = "Chat and send files to other computers",
+        download = "Get programs from the update repo",
+        programs = "Installed programs: edit, share, delete",
+        disks = "Browse disks, drives and the ROM",
+        settings = "Look, clock, UI engine and monitors",
+        others = "Secure boot, updates, input test, about",
+        reboot = "Restart this computer",
+        shutdown = "Turn this computer off",
+    }
+    local sel_e = entries[sel]
+    local hintText = nil
+    if sel_e then
+        local lab = sel_e.label:lower()
+        for key, text in pairs(hints) do
+            if lab:sub(1, #key) == key then hintText = text break end
+        end
+    end
+    if hintText and #entries + 1 < H - 1 then
+        bmenu.put(b.hint, pad("  " .. hintText, W), colors.black, colors.gray, 1, H - 1, W)
+    else
+        bmenu.hide(b.hint)
     end
 
     -- Button bar, laid out like footerButtons. The hit areas are the same too.
@@ -4664,6 +4706,13 @@ function bmenu.draw(entries, sel, top, buttons)
     for j = used + 1, #b.tags do
         bmenu.hide(b.tags[j])
         bmenu.hide(b.labels[j])
+    end
+    -- Computer ID at the right end of the button bar when it fits.
+    local idText = "ID " .. os.getComputerID() .. " "
+    if x + #idText + 1 <= W then
+        bmenu.put(b.info, idText, colors.gray, colors.lightGray, W - #idText + 1, H, #idText)
+    else
+        bmenu.hide(b.info)
     end
 end
 
