@@ -17,7 +17,7 @@ if type(api) ~= "table" or not api.header then
     error("Open Download from the Prismarine OS menu.", 0)
 end
 
-local VERSION = "1"
+local VERSION = "2"
 
 local settings, header, footer, footerButtons = api.settings, api.header, api.footer, api.footerButtons
 local drawList, drawCard, clampTop = api.drawList, api.drawCard, api.clampTop
@@ -1283,7 +1283,7 @@ end
 
 -- The loading screen reads the GitHub file list while the logo animates.
 function D.load()
-    local sc = boot and boot.start(false)
+    local sc = boot and boot.start(false, "DOWNLOADS")
     if sc then
         sc.tag = "Downloads  v" .. VERSION
         boot.stage(sc, "Starting", 0.15)
