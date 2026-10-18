@@ -1012,91 +1012,182 @@ local function thr(x, y)
     return (C.BAYER[(y - 1) % 4 + 1][(x - 1) % 4 + 1] + 0.5) / 16
 end
 
--- Header: solid behind the title, then a dithered fade to black.
-local hdr = { key = nil }
-function gfx.header(title, bar)
-    if not gfx.pb or not settings.graphics or bar == colors.black then return false end
-    local solid = math.min(W, #title + 3)
-    if solid >= W - 3 then return false end
-    local key = W .. ":" .. bar .. ":" .. solid
-    if hdr.key ~= key then
-        local ok = pcall(function()
-            hdr.win = window.create(term.current(), 1, 1, W, 1, true)
-            hdr.box = gfx.pb.new(hdr.win, colors.black)
-            local mid = (bar == colors.gray) and colors.lightGray or colors.gray
-            local pw = W * 2
-            local x0 = solid * 2
-            for py = 1, 3 do
-                for px = 1, pw do
-                    local col = bar
-                    if px > x0 then
-                        local t = (px - x0) / (pw - x0)
-                        local a, b, f
-                        if t < 0.5 then
-                            a, b, f = bar, mid, t * 2
-                        else
-                            a, b, f = mid, colors.black, (t - 0.5) * 2
-                        end
-                        col = (f > thr(px, py)) and b or a
-                    end
-                    hdr.box.canvas[py][px] = col
-                end
-            end
+-- ---------------------------------------------------------------------------
+-- Pixel shape toolkit. It sits on top of Pixelbox_Lite without changing the
+-- downloaded file, so the pinned SHA-256 still matches. A surface is a cached
+-- window + Pixelbox canvas. Pixels are 2x3 per terminal cell, and a cell can
+-- only show two colors, so shapes keep to two colors per cell where they can.
+-- ---------------------------------------------------------------------------
+gfx.px = { surf = {} }
+
+-- Cached surface for slot at cell x, y with size w x h cells, or nil.
+function gfx.px.surface(slot, x, y, w, h)
+    if not gfx.pb or not settings.graphics or w < 1 or h < 1 then return nil end
+    local s = gfx.px.surf[slot]
+    if not s or s.w ~= w or s.h ~= h then
+        local ok, res = pcall(function()
+            local win = window.create(term.current(), x, y, w, h, true)
+            return { win = win, box = gfx.pb.new(win, colors.black), w = w, h = h }
         end)
         if not ok then
-            hdr.key = nil
-            return false
+            gfx.px.surf[slot] = nil
+            return nil
         end
-        hdr.key = key
+        s = res
+        gfx.px.surf[slot] = s
     end
-    return (pcall(hdr.box.render, hdr.box))
+    if not pcall(s.win.reposition, x, y) then
+        gfx.px.surf[slot] = nil
+        return nil
+    end
+    return s
 end
 
--- Highlight for the selected list row: solid behind the text, then a dithered
--- fade to black. The caller writes the text on top afterwards.
-local selBar = { key = nil }
-function gfx.selectBar(row, solid, color)
-    if not gfx.pb or not settings.graphics or color == colors.black then return false end
-    if solid >= W - 3 then return false end
-    if selBar.w ~= W then
-        selBar.win, selBar.box, selBar.key, selBar.w = nil, nil, nil, W
+function gfx.px.fill(s, color)
+    local canvas = s.box.canvas
+    for py = 1, s.h * 3 do
+        local row = canvas[py]
+        for px = 1, s.w * 2 do row[px] = color end
     end
-    local key = color .. ":" .. solid
-    local ok = pcall(function()
-        if not selBar.win then
-            selBar.win = window.create(term.current(), 1, row, W, 1, true)
-            selBar.box = gfx.pb.new(selBar.win, colors.black)
-        else
-            selBar.win.reposition(1, row)
-        end
-        if selBar.key ~= key then
-            local mid = (color == colors.gray) and colors.black or colors.gray
-            local pw, x0 = W * 2, solid * 2
-            local canvas = selBar.box.canvas
-            for py = 1, 3 do
-                for px = 1, pw do
-                    local col = color
-                    if px > x0 then
-                        local t = (px - x0) / (pw - x0)
-                        local a, b, f
-                        if t < 0.5 then
-                            a, b, f = color, mid, t * 2
-                        else
-                            a, b, f = mid, colors.black, (t - 0.5) * 2
-                        end
-                        col = (f > thr(px, py)) and b or a
-                    end
-                    canvas[py][px] = col
-                end
+end
+
+-- Is pixel x, y inside the rectangle x1..x2, y1..y2 with corner radius r?
+function gfx.px.inside(x, y, x1, y1, x2, y2, r)
+    if x < x1 or x > x2 or y < y1 or y > y2 then return false end
+    if r <= 0 then return true end
+    local cx = (x < x1 + r) and (x1 + r) or ((x > x2 - r) and (x2 - r) or x)
+    local cy = (y < y1 + r) and (y1 + r) or ((y > y2 - r) and (y2 - r) or y)
+    local dx, dy = x - cx, y - cy
+    return dx * dx + dy * dy <= r * r + r * 0.5
+end
+
+-- Fills a rounded rectangle. paint is a color or a function(x, y) -> color.
+function gfx.px.round(s, x1, y1, x2, y2, r, paint)
+    local canvas = s.box.canvas
+    for y = math.max(1, y1), math.min(s.h * 3, y2) do
+        local row = canvas[y]
+        for x = math.max(1, x1), math.min(s.w * 2, x2) do
+            if gfx.px.inside(x, y, x1, y1, x2, y2, r) then
+                if type(paint) == "function" then row[x] = paint(x, y) else row[x] = paint end
             end
-            selBar.key = key
+        end
+    end
+end
+
+-- A three pixel tall pill on cell row `row` (1-based) between pixel columns
+-- x1 and x2. The outer corner pixels of a rounded end are left out.
+function gfx.px.pill(s, row, x1, x2, color, left, right)
+    local canvas = s.box.canvas
+    local y0 = (row - 1) * 3
+    for px = math.max(1, x1), math.min(s.w * 2, x2) do
+        for k = 1, 3 do
+            local skip = (k ~= 2) and ((left and px == x1) or (right and px == x2))
+            if not skip then canvas[y0 + k][px] = color end
+        end
+    end
+end
+
+-- A tapered, dithered tail from pixel column x0 to x1 on cell row `row`. Each
+-- cell blends only two colors, and the top and bottom pixel rows fade sooner
+-- than the middle one.
+function gfx.px.tail(s, row, x0, x1, color, mid)
+    local canvas = s.box.canvas
+    local y0 = (row - 1) * 3
+    local span = math.max(1, x1 - x0)
+    for px = math.max(1, x0), math.min(s.w * 2, x1) do
+        local cell = math.floor((px - 1) / 2)
+        local t = math.min(1, math.max(0, (cell * 2 + 1.5 - x0) / span)) * 0.9
+        local a, b, f
+        if t < 0.5 then
+            a, b, f = color, mid, t * 2
+        else
+            a, b, f = mid, colors.black, (t - 0.5) * 2
+        end
+        for k = 1, 3 do
+            local fk = (k == 2) and f or math.min(1, f + 0.3)
+            canvas[y0 + k][px] = (fk > thr(px, y0 + k)) and b or a
+        end
+    end
+end
+
+-- A rounded panel with an accent stripe on its left, covering w x h cells at
+-- cell x, y. The caller writes the text on top, starting at the third cell.
+function gfx.px.card(x, y, w, h, stripe, body)
+    local s = gfx.px.surface("card", x, y, w, h)
+    if not s then return false end
+    local ok = pcall(function()
+        gfx.px.fill(s, colors.black)
+        local pw, ph = w * 2, h * 3
+        local r = (ph >= 12) and 4 or 3
+        gfx.px.round(s, 1, 1, pw, ph, r, function(px)
+            return (px <= 4) and stripe or body
+        end)
+    end)
+    return ok and (pcall(s.box.render, s.box))
+end
+
+-- Header: a rounded title pill, a one cell gap, then a tapered dithered tail.
+-- The caller writes the title (from the second cell) on top afterwards.
+function gfx.header(title, bar)
+    if bar == colors.black then return false end
+    local solid = math.min(W, #title + 3)
+    if solid >= W - 4 then return false end
+    local s = gfx.px.surface("hdr", 1, 1, W, 1)
+    if not s then return false end
+    local key = W .. ":" .. bar .. ":" .. solid
+    if s.key ~= key then
+        local ok = pcall(function()
+            local mid = (bar == colors.gray) and colors.lightGray or colors.gray
+            gfx.px.fill(s, colors.black)
+            gfx.px.pill(s, 1, 1, solid * 2, bar, true, true)
+            gfx.px.tail(s, 1, solid * 2 + 3, math.min(W * 2, solid * 2 + 44), bar, mid)
+        end)
+        if not ok then return false end
+        s.key = key
+    end
+    return (pcall(s.box.render, s.box))
+end
+
+-- Highlight for the selected list row: a rounded pill behind the text, a one
+-- cell gap, then a tapered tail. The caller writes the label from the second
+-- cell on top afterwards.
+function gfx.selectBar(row, solid, color)
+    if color == colors.black or solid >= W - 4 then return false end
+    local s = gfx.px.surface("sel", 1, row, W, 1)
+    if not s then return false end
+    local key = color .. ":" .. solid
+    if s.key ~= key then
+        local ok = pcall(function()
+            local mid = (color == colors.gray) and colors.black or colors.gray
+            gfx.px.fill(s, colors.black)
+            gfx.px.pill(s, 1, 1, solid * 2, color, true, true)
+            gfx.px.tail(s, 1, solid * 2 + 3, math.min(W * 2, solid * 2 + 44), color, mid)
+        end)
+        if not ok then return false end
+        s.key = key
+    end
+    return (pcall(s.box.render, s.box))
+end
+
+-- Footer buttons as rounded pills on the gray bar. layout is a list of
+-- { x, tag, total } with the tag length in cells (0 for none).
+function gfx.px.footer(layout, accent)
+    local s = gfx.px.surface("foot", 1, H, W, 1)
+    if not s then return false end
+    local ok = pcall(function()
+        gfx.px.fill(s, colors.gray)
+        for _, b in ipairs(layout) do
+            local x1, x2 = (b.x - 1) * 2 + 1, (b.x + b.total - 1) * 2
+            if b.tag > 0 then
+                local seam = (b.x + b.tag - 1) * 2
+                gfx.px.pill(s, 1, x1, seam, accent, true, false)
+                gfx.px.pill(s, 1, seam + 1, x2, colors.lightGray, false, true)
+            else
+                gfx.px.pill(s, 1, x1, x2, colors.lightGray, true, true)
+            end
         end
     end)
-    if not ok then
-        selBar.win, selBar.key = nil, nil
-        return false
-    end
-    return (pcall(selBar.box.render, selBar.box))
+    return ok and (pcall(s.box.render, s.box))
 end
 
 -- A three pixel tall progress bar with a lit top edge, a glowing head and a
@@ -2088,23 +2179,48 @@ local function footerButtons(buttons)
     term.write(string.rep(" ", W))
     local accent = colorValue(settings.barColor, colors.blue)
     if accent == colors.black or accent == colors.gray then accent = colors.blue end
-    local x = 1
+    local layout, x = {}, 1
     for _, b in ipairs(buttons) do
         local tagText = (b.tag ~= "") and (" " .. b.tag .. " ") or ""
         local labelText = ((b.tag ~= "") and "" or " ") .. b.label .. " "
         local total = #tagText + #labelText
         if x + total - 1 > W then break end
-        term.setCursorPos(x, H)
-        if tagText ~= "" then
+        table.insert(layout, { x = x, tag = #tagText, total = total, tagText = tagText,
+                               labelText = labelText, k = b.k })
+        x = x + total + 1
+    end
+    -- Rounded pills when Pixelbox is on. The first and last cell of each
+    -- button are the rounded ends, so the text skips them.
+    local pill = gfx.px.footer(layout, accent)
+    for _, b in ipairs(layout) do
+        local lx = b.x
+        if b.tag > 0 then
             term.setBackgroundColor(accent)
             term.setTextColor(textOn(accent))
-            term.write(tagText)
+            if pill then
+                term.setCursorPos(lx + 1, H)
+                term.write(b.tagText:sub(2))
+            else
+                term.setCursorPos(lx, H)
+                term.write(b.tagText)
+            end
+            lx = lx + b.tag
         end
         term.setBackgroundColor(colors.lightGray)
         term.setTextColor(colors.black)
-        term.write(labelText)
-        table.insert(buttonHits, { x1 = x, x2 = x + total - 1, k = b.k })
-        x = x + total + 1
+        if pill then
+            local text = b.labelText:sub(1, -2)
+            if b.tag == 0 then
+                text = text:sub(2)
+                lx = lx + 1
+            end
+            term.setCursorPos(lx, H)
+            term.write(text)
+        else
+            term.setCursorPos(lx, H)
+            term.write(b.labelText)
+        end
+        table.insert(buttonHits, { x1 = b.x, x2 = b.x + b.total - 1, k = b.k })
     end
 end
 
@@ -2228,10 +2344,12 @@ local function drawList(title, entries, sel, top, buttons)
                 local fancy = solid < w - 3 and gfx.selectBar(row, solid, hl)
                 term.setBackgroundColor(hl)
                 term.setTextColor(textOn(hl))
-                term.setCursorPos(1, row)
                 if fancy then
-                    term.write(pad(" " .. e.label, solid))
+                    -- The first and last cells belong to the rounded pill.
+                    term.setCursorPos(2, row)
+                    term.write(pad(e.label, solid - 2))
                 else
+                    term.setCursorPos(1, row)
                     term.write(pad(" " .. e.label, w))
                 end
             else
@@ -2323,8 +2441,10 @@ local function drawCard(y, lines, stripe, fg)
         end
         gfx.bs.flush()
     end) then return y + h end
-    fillRect(2, y, W - 1, y + h - 1, colors.gray)
-    fillRect(2, y, 2, y + h - 1, stripe or colors.lightBlue)
+    if not gfx.px.card(2, y, W - 2, h, stripe or colors.lightBlue, colors.gray) then
+        fillRect(2, y, W - 1, y + h - 1, colors.gray)
+        fillRect(2, y, 2, y + h - 1, stripe or colors.lightBlue)
+    end
     term.setBackgroundColor(colors.gray)
     term.setTextColor(fg or colors.white)
     for n, text in ipairs(rows) do
