@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="400" viewBox="0 0 900 400">
+  <style>
+    @keyframes glow {
+      0% { text-shadow: 0 0 4px #3b82f6, 0 0 10px #3b82f6; }
+      50% { text-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f6, 0 0 30px #3b82f6; }
+      100% { text-shadow: 0 0 4px #3b82f6, 0 0 10px #3b82f6; }
+    }
+    @keyframes scanline {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(400px); }
+    }
+    .bg { fill: #0a0a0a; }
+    .border { fill: none; stroke: #3b82f6; stroke-width: 2; }
+    .text {
+      font-family: monospace;
+      font-size: 10px;
+      fill: #3b82f6;
+      white-space: pre;
+      animation: glow 2s infinite alternate;
+    }
+    .scanline {
+      fill: rgba(59, 130, 246, 0.1);
+      width: 100%;
+      height: 5px;
+      animation: scanline 6s linear infinite;
+    }
+  </style>
+  
+  <rect class="bg" width="900" height="400" rx="8" />
+  <rect class="border" width="900" height="400" rx="8" />
+  <rect class="scanline" x="0" y="0" />
+  
+  <text class="text" x="20" y="20">
+    <tspan x="20" dy="1.2em">PPPPPPPPPPPPPPPPP                        iiii                                                                                 iiii                                       </tspan>
+    <tspan x="20" dy="1.2em">P::::::::::::::::P                      i::::i                                                                               i::::i                                      </tspan>
+    <tspan x="20" dy="1.2em">P::::::PPPPPP:::::P                      iiii                                                                                 iiii                                       </tspan>
+    <tspan x="20" dy="1.2em">PP:::::P     P:::::P                                                                                                                                                     </tspan>
+    <tspan x="20" dy="1.2em">  P::::P     P:::::Prrrrr   rrrrrrrrr  iiiiiii     ssssssssss      mmmmmmm    mmmmmmm     aaaaaaaaaaaaa  rrrrr   rrrrrrrrr  iiiiiiinnnn  nnnnnnnn        eeeeeeeeeeee    </tspan>
+    <tspan x="20" dy="1.2em">  P::::P     P:::::Pr::::rrr:::::::::r i:::::i   ss::::::::::s   mm:::::::m  m:::::::mm   a::::::::::::a r::::rrr:::::::::r i:::::in:::nn::::::::nn    ee::::::::::::ee  </tspan>
+    <tspan x="20" dy="1.2em">  P::::PPPPPP:::::P r:::::::::::::::::r i::::i ss:::::::::::::s m::::::::::mm::::::::::m  aaaaaaaaa:::::ar:::::::::::::::::r i::::in::::::::::::::nn  e::::::eeeee:::::ee</tspan>
+    <tspan x="20" dy="1.2em">  P:::::::::::::PP  rr::::::rrrrr::::::ri::::i s::::::ssss:::::sm::::::::::::::::::::::m           a::::arr::::::rrrrr::::::ri::::inn:::::::::::::::ne::::::e     e:::::e</tspan>
+    <tspan x="20" dy="1.2em">  P::::PPPPPPPPP     r:::::r     r:::::ri::::i  s:::::s  ssssss m:::::mmm::::::mmm:::::m    aaaaaaa:::::a r:::::r     r:::::ri::::i  n:::::nnnn:::::ne:::::::eeeee::::::e</tspan>
+    <tspan x="20" dy="1.2em">  P::::P             r:::::r     rrrrrrri::::i    s::::::s      m::::m   m::::m   m::::m  aa::::::::::::a r:::::r     rrrrrrri::::i  n::::n    n::::ne:::::::::::::::::e </tspan>
+    <tspan x="20" dy="1.2em">  P::::P             r:::::r            i::::i       s::::::s   m::::m   m::::m   m::::m a::::aaaa::::::a r:::::r            i::::i  n::::n    n::::ne::::::eeeeeeeeeee  </tspan>
+    <tspan x="20" dy="1.2em">  P::::P             r:::::r            i::::i ssssss   s:::::s m::::m   m::::m   m::::ma::::a    a:::::a r:::::r            i::::i  n::::n    n::::ne:::::::e           </tspan>
+    <tspan x="20" dy="1.2em">PP::::::PP           r:::::r           i::::::is:::::ssss::::::sm::::m   m::::m   m::::ma::::a    a:::::a r:::::r           i::::::i n::::n    n::::ne::::::::e          </tspan>
+    <tspan x="20" dy="1.2em">P::::::::P           r:::::r           i::::::is::::::::::::::s m::::m   m::::m   m::::ma:::::aaaa::::::a r:::::r           i::::::i n::::n    n::::n e::::::::eeeeeeee  </tspan>
+    <tspan x="20" dy="1.2em">P::::::::P           r:::::r           i::::::i s:::::::::::ss  m::::m   m::::m   m::::m a::::::::::aa:::ar:::::r           i::::::i n::::n    n::::n  ee:::::::::::::e  </tspan>
+    <tspan x="20" dy="1.2em">PPPPPPPPPP           rrrrrrr           iiiiiiii  sssssssssss    mmmmmm   mmmmmm   mmmmmm  aaaaaaaaaa  aaaarrrrrrr           iiiiiiii nnnnnn    nnnnnn    eeeeeeeeeeeeee  </tspan>
+  </text>
+</svg>
