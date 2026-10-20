@@ -2,8 +2,14 @@
 -- Mouse: click [= Apps], [v Active: ...] and [H] on the top bar.
 -- Keys:  Left Alt = Apps menu, Right Alt = switcher, Up/Down/Enter/Backspace in menus.
 --        F12 quits.
-local K = dofile("/prismarine/kernel/kernel.lua")
-local UI = dofile("/prismarine/ui/ui.lua")
+-- The load screen runs first. Everything else loads behind it.
+local G = dofile("/prismarine/ui/gfx.lua")
+G.init()
+local K, UI
+G.splash({
+  { "Loading kernel", function() K = dofile("/prismarine/kernel/kernel.lua") end },
+  { "Loading interface", function() UI = dofile("/prismarine/ui/ui.lua") end },
+}, 2.4)
 
 local native = term.native()
 local TESTS = "/prismarine/tests/"
@@ -32,6 +38,8 @@ local apps = {
 }
 
 local ui = UI.create(K, {
+  gfx = G,
+  noBoot = true,
   apps = apps,
   paintDashboard = paintDashboard,
   dashHint = "Left Alt: Apps   Right Alt: Switch   F12: Quit",

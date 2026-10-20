@@ -1152,7 +1152,7 @@ function M.create(K, cfg)
   hooks.onStart = function()
     native.setBackgroundColor(colors.black)
     native.clear()
-    if gfxOK and animOn() then startBoot() else showDash() end
+    if gfxOK and animOn() and not cfg.noBoot then startBoot() else showDash() end
     -- keep the dashboard moving: one tick per frame
     local function beat()
       K.after(1 / G.opts.fps, beat)

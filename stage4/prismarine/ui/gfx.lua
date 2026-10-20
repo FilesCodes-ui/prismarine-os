@@ -419,6 +419,13 @@ local function thr(x, y)
   return (BAYER[(y - 1) % 4 + 1][(x - 1) % 4 + 1] + 0.5) / 16
 end
 
+-- Same, with weak dithering. The logo uses it so its edges stay clean.
+local function slotSoft(level, n, x, y)
+  local i = floor(level * (n - 1) + 0.5 + (thr(x, y) - 0.5) * 0.35)
+  if i < 0 then i = 0 elseif i > n - 1 then i = n - 1 end
+  return i + 1
+end
+
 -- Which of n palette shades a brightness maps to, with ordered dithering.
 local function slotFor(level, n, x, y)
   local i = floor(level * (n - 1) + thr(x, y))
@@ -438,19 +445,11 @@ function G.logo(dw)
   for dy = 1, dh do
     local y0, y1 = (dy - 1) * SH / dh, dy * SH / dh
     local row = {}
+    local sy = min(SH, floor(((dy - 0.5) * SH) / dh) + 1)
+    local srow = SRC[sy]
     for dx = 1, dw do
-      local x0, x1 = (dx - 1) * LOGO_W / dw, dx * LOGO_W / dw
-      local sum, wsum = 0, 0
-      for sy = floor(y0) + 1, min(SH, math.ceil(y1)) do
-        local wy = min(sy, y1) - max(sy - 1, y0)
-        local srow = SRC[sy]
-        for sx = floor(x0) + 1, min(LOGO_W, math.ceil(x1)) do
-          local wx = min(sx, x1) - max(sx - 1, x0)
-          sum = sum + srow[sx] * wx * wy
-          wsum = wsum + wx * wy
-        end
-      end
-      row[dx] = (wsum > 0) and sum / wsum or 0
+      local sx = min(LOGO_W, floor(((dx - 0.5) * LOGO_W) / dw) + 1)
+      row[dx] = srow[sx]
     end
     lv[dy] = row
     rg[dy] = ((y0 + y1) / 2 <= LOGO_SPLIT) and 1 or 2
@@ -464,7 +463,7 @@ end
 local function newScene(spr, reserve)
   local pw, ph = spr.w * 2, spr.h * 3
   local ratio = LOGO_W * 6 / (LOGO_R * 9)
-  local dw = min(98, pw - 4, floor((spr.h - reserve) * 3 * ratio))
+  local dw = min(87, pw - 4, floor((spr.h - reserve) * 3 * ratio))
   if dw < 36 then return { none = true } end
   local logo = G.logo(dw)
   local logoRows = math.ceil(logo.h / 3)
@@ -518,7 +517,7 @@ local function paintLogo(sc, canvas, t)
       local r = dy - lastGray
       local off = 0
       if not gray then
-        off = floor(sin(r * 0.95 - t * 4.2) * (0.6 + r * 0.05) * 1.2 + 0.5)
+        off = floor(sin(r * 0.95 - t * 4.2) * (0.6 + r * 0.05) * 0.8 + 0.5)
       end
       for dx = 1, dw do
         local l = lvrow[clamp(dx + off, 1, dw)]
@@ -529,10 +528,10 @@ local function paintLogo(sc, canvas, t)
               local k = 1 - math.abs(d) / 9
               l = l + k * k * 0.6
             end
-            crow[sc.ox + dx] = SLOT_GR[slotFor(l, ngr, dx, dy)]
+            crow[sc.ox + dx] = SLOT_GR[slotSoft(l, ngr, dx, dy)]
           else
             l = l * (0.86 + 0.14 * sin(dx * 0.45 + r * 0.8 - t * 3.2))
-            crow[sc.ox + dx] = SLOT_AC[slotFor(l, nac, dx, dy)]
+            crow[sc.ox + dx] = SLOT_AC[slotSoft(l, nac, dx, dy)]
           end
         end
       end
@@ -633,10 +632,70 @@ function Sprite:dash(o)
     s = s:sub(1, self.w)
     self:text(floor((self.w - #s) / 2) + 1, row, s, fg, bg)
   end
-  if not o.boot then
+  if o.boot then
+    center(self.h - 1, o.label, colors.lightGray)
+  else
     center(self.h - 1, o.clock, colors.white)
     center(self.h, o.hint, colors.lightGray)
   end
+end
+
+-- Load screen. Runs before the kernel and the UI load. Each loader is
+-- { "label", function() ... end }. The logo fades in, the bar fills as the
+-- loaders finish, and the last frame hands over to the dashboard.
+function G.splash(loaders, minTime)
+  minTime = minTime or 2.2
+  local native = term.native()
+  local W, H = native.getSize()
+  if G.pb == false or not G.pb then
+    for _, l in ipairs(loaders) do l[2]() end
+    return
+  end
+  local haze = true
+  pcall(function()
+    local f = fs.open("/prismarine/data/ui_settings.json", "r")
+    if f then
+      local t = textutils.unserializeJSON(f.readAll())
+      f.close()
+      if type(t) == "table" then
+        if t.haze == false then haze = false end
+        if type(t.logoColor) == "string" then G.setLogoColor(t.logoColor) end
+      end
+    end
+  end)
+  native.setBackgroundColor(colors.black)
+  native.clear()
+  native.setCursorBlink(false)
+  local spr = G.sprite(W, H - 1)
+  local t0 = os.clock()
+  local n, done = #loaders, 0
+  local label = ""
+  local shown = 0
+  local function frame()
+    local el = os.clock() - t0
+    local cap = (n > 0) and done / n or 1
+    local want = math.min(cap, el / minTime)
+    shown = shown + math.min(want - shown, 0.08)
+    if shown < 0 then shown = 0 end
+    G.applyScene(os.clock(), clamp(el / 0.5, 0, 1))
+    spr:dash({ t = os.clock(), haze = haze, boot = shown, label = label })
+    spr:present(1, 2)
+  end
+  frame()
+  for i, l in ipairs(loaders) do
+    label = l[1]
+    frame()
+    l[2]()
+    done = i
+    frame()
+    os.sleep(0.05)
+  end
+  label = "Starting"
+  while os.clock() - t0 < minTime or shown < 0.999 do
+    frame()
+    os.sleep(0.05)
+  end
+  G.applyScene(os.clock())
 end
 
 return G

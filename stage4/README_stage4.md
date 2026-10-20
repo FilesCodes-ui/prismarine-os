@@ -19,3 +19,5 @@ What to check:
 Theme file: /prismarine/data/theme.json
 Keys: colors by role, logoColor, animations, fps (2 to 30).
 Logo colors: Blue, Prismarine, Aqua, Emerald, Lime, Gold, Orange, Red, Rose, Magenta, Violet, Ice, Rainbow, or #RRGGBB.
+
+Load screen: ui_test.lua now shows the logo and a progress bar first, then loads the kernel and the interface behind it.
