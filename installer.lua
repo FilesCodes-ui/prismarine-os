@@ -163,7 +163,7 @@ end
 -- Y or N. Returns true for Y.
 local function yesNo(question)
     setColor(colors.yellow, colors.black)
-    write(question .. " (Y/N) ")
+    write(question .. " Y/N ")
     setColor(colors.white, colors.black)
     while true do
         local _, key = os.pullEvent("key")
@@ -506,7 +506,7 @@ local function install(entry)
     say("Installed: " .. (cur and ("version " .. cur.version) or "none found"), colors.lightGray)
     print()
 
-    local want = readLine("SHA-256 of the manifest or file (Enter to skip): ")
+    local want = readLine("SHA-256 of the manifest or file, Enter to skip: ")
     want = want:lower():gsub("%s", "")
     if want == "" then
         want = nil
@@ -710,7 +710,7 @@ local function installStage(entry)
     say("Your old startup.lua is saved as startup.lua.bak.", colors.lightGray)
     print()
 
-    local want = readLine("SHA-256 of setup.lua (Enter to skip): ")
+    local want = readLine("SHA-256 of setup.lua, Enter to skip: ")
     want = want:lower():gsub("%s", "")
     if want == "" then
         want = nil
@@ -748,13 +748,13 @@ end
 
 -- ── Classic and Simple ─────────────────────────────────────────────────────
 local function chooseEntry(title, items, label)
-    local opts = { "Install the newest (" .. label(items[1]) .. ")", "Choose a version...", "Cancel" }
+    local opts = { "Install the newest, " .. label(items[1]), "Choose a version...", "Cancel" }
     local choice = menu(title, opts)
     if choice == 1 then return items[1] end
     if choice == 2 then
         local labels = {}
         for i, v in ipairs(items) do
-            labels[i] = label(v) .. (i == 1 and "  (newest)" or "")
+            labels[i] = label(v) .. (i == 1 and "  newest" or "")
         end
         local pick = menu(title, labels)
         if pick then return items[pick] end
@@ -765,7 +765,7 @@ end
 local function classicLabel(prefix)
     local cur = installedState()
     return function(v)
-        return prefix .. " " .. v.version .. (cur and cur.version == v.version and "  (installed)" or "")
+        return prefix .. " " .. v.version .. (cur and cur.version == v.version and "  installed" or "")
     end
 end
 
@@ -792,7 +792,7 @@ local function runLegacy(edition, wantedN)
         end
         if not entry then fail(name .. " has no version " .. wantedN .. ".") end
     else
-        local title = name .. (edition == "simple" and " (before the loading screen)" or " (17 and up, no 18)")
+        local title = name .. (edition == "simple" and ", before the loading screen" or ", 17 and up, no 18")
         entry = chooseEntry(title, items, classicLabel(edition == "simple" and "Simple OS" or "Version"))
     end
     if not entry then return nil end
@@ -854,9 +854,9 @@ local function run()
         else fail("Version " .. n .. " is not offered.", "Classic is " .. CLASSIC_MIN .. " and up without 18. Simple OS is " .. SIMPLE_MAX .. " and below.") end
     else
         local opts = {
-            "Full version (Prismarine, kernel)",
-            "Classic (versions 17 and up, no 18)",
-            "Classic Simple OS (before the loading screen)",
+            "Full version, Prismarine kernel",
+            "Classic, versions 17 and up, no 18",
+            "Classic Simple OS, before the loading screen",
         }
         local hasUndo = fs.exists(BACKUP .. "/journal.json")
         if hasUndo then opts[#opts + 1] = "Undo the last classic install" end
