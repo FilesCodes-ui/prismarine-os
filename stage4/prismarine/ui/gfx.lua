@@ -512,6 +512,16 @@ local function newScene(spr, reserve)
     oy = (top - 1) * 3 + floor((logoRows * 3 - logo.h) / 2),
     bubbles = {}, last = nil,
   }
+  -- A cell holds only two colors. Put the blank row between the gray and the
+  -- colored half on a cell edge so it does not take the color of a neighbor.
+  local lastGray = 0
+  for y = 1, logo.h do
+    if logo.rg[y] == 1 then lastGray = y end
+  end
+  for _ = 1, 3 do
+    if (sc.oy + lastGray) % 3 == 0 then break end
+    sc.oy = sc.oy + 1
+  end
   for i = 1, 16 do
     sc.bubbles[i] = {
       x = math.random(2, pw - 1), y = math.random(1, ph),
