@@ -165,8 +165,9 @@ end
 
 function K.apiFor(p)
   return {
-    version = "23.0-stage2",
+    version = "23.0-stage4",
     appName = p.name,
+    ui = K.uiApi,
     notify = function(title, text, level, private)
       return K.notify(p, title, text, level, private)
     end,

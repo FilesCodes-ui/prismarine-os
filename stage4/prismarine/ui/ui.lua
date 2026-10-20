@@ -54,6 +54,8 @@ function M.create(K, cfg)
       S.showText = t.showText == true
       if t.anim == false then S.anim = false end
       if t.haze == false then S.haze = false end
+      if type(t.theme) == "string" and G.setTheme(t.theme) then S.theme = t.theme end
+      if type(t.fps) == "number" then S.fps = clamp(floor(t.fps), 2, 30) G.opts.fps = S.fps end
       if type(t.logoColor) == "string" and G.setLogoColor(t.logoColor) then S.logoColor = t.logoColor end
     end)
     return ok
@@ -137,6 +139,71 @@ function M.create(K, cfg)
 
   local dash = { spr = nil, last = 0, visible = false }
 
+  -- ---------------------------------------------------------- settings API
+  -- Apps reach this as prismarine.ui. Only these keys exist.
+  local function applyLook()
+    if gfxOK and G.sceneOn then G.applyScene(os.clock()) end
+    dash.spr = nil
+  end
+
+  local DEFAULTS = { anim = true, haze = true, dnd = false, showText = false, toastSide = "right", fps = 12, logoColor = "Blue" }
+
+  K.uiApi = {
+    logoColors = G.logoNames,
+    themes = G.themes,
+    get = function()
+      return {
+        theme = G.theme,
+        anim = S.anim, haze = S.haze, dnd = S.dnd, showText = S.showText,
+        toastSide = S.toastSide, fps = G.opts.fps, logoColor = G.opts.logoColor,
+        graphics = gfxOK, width = W, height = H,
+      }
+    end,
+    set = function(key, v)
+      if key == "anim" or key == "haze" or key == "dnd" or key == "showText" then
+        if type(v) ~= "boolean" then return false end
+        S[key] = v
+      elseif key == "toastSide" then
+        if v ~= "left" and v ~= "right" then return false end
+        S.toastSide = v
+      elseif key == "fps" then
+        if type(v) ~= "number" then return false end
+        S.fps = clamp(floor(v), 2, 30)
+        G.opts.fps = S.fps
+      elseif key == "theme" then
+        if type(v) ~= "string" or not G.setTheme(v) then return false end
+        S.theme = v
+        S.logoColor = G.opts.logoColor
+        dash.spr = nil
+      elseif key == "logoColor" then
+        if type(v) ~= "string" or not G.setLogoColor(v) then return false end
+        S.logoColor = v
+      else
+        return false
+      end
+      saveSettings()
+      if key == "logoColor" or key == "haze" or key == "anim" or key == "theme" then applyLook() end
+      return true
+    end,
+    reset = function()
+      S.anim, S.haze, S.dnd, S.showText = DEFAULTS.anim, DEFAULTS.haze, DEFAULTS.dnd, DEFAULTS.showText
+      S.toastSide, S.fps, S.logoColor = DEFAULTS.toastSide, DEFAULTS.fps, DEFAULTS.logoColor
+      G.opts.fps = DEFAULTS.fps
+      G.setTheme("Ocean")
+      S.theme = "Ocean"
+      G.setLogoColor(DEFAULTS.logoColor)
+      saveSettings()
+      applyLook()
+      return true
+    end,
+    clearNotifications = function()
+      for i = #K.notifications, 1, -1 do table.remove(K.notifications, i) end
+      return true
+    end,
+    notificationCount = function() return #K.notifications end,
+  }
+
+
   local function dashRender()
     if not gfxOK then return end
     if not dash.spr or dash.spr.w ~= W or dash.spr.h ~= H - 1 then
@@ -148,6 +215,7 @@ function M.create(K, cfg)
       t = animOn() and t or 0,
       haze = S.haze,
       boot = dash.boot and dash.boot.prog or nil,
+      status = K.appCount() .. " apps   " .. #K.notifications .. " alerts",
       clock = os.date("%H:%M:%S   %a %d %b"),
       hint = dashHint,
     })
@@ -434,7 +502,12 @@ function M.create(K, cfg)
 
   local function settingsRows()
     local rows = {}
-    rows[#rows + 1] = { text = "SETTINGS", hdr = true }
+    rows[#rows + 1] = { text = "QUICK SETTINGS", hdr = true }
+    for _, a in ipairs(apps) do
+      if a.name == "Settings" then
+        rows[#rows + 1] = { text = "Open Settings app", act = function() closeMenu(true) launch(a) end }
+      end
+    end
     rows[#rows + 1] = {
       text = "Toasts slide in: " .. S.toastSide,
       act = function()
@@ -806,7 +879,8 @@ function M.create(K, cfg)
     local lvl = n.level
     local accent = (lvl == "error") and C.err or (lvl == "warn" and C.warn or C.info)
     local titleBg = n.system and C.toastSys or C.toastBar
-    local head = (n.system and "SYSTEM" or n.from) .. ": " .. n.title
+    local icon = (lvl == "error") and "x " or (lvl == "warn" and "! " or "i ")
+    local head = icon .. (n.system and "SYSTEM" or n.from) .. ": " .. n.title
     if tk.count > 1 then head = head .. " x" .. tk.count end
     local spr = G.sprite(TWo, THo)
     spr:panel(C.panel, accent)

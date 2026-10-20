@@ -17,6 +17,7 @@ local files = {
   "prismarine/lib/sha256.lua",
   "prismarine/ui/gfx.lua",
   "prismarine/ui/ui.lua",
+  "prismarine/apps/settings.lua",
   "prismarine/tests/counter.lua",
   "prismarine/tests/crasher.lua",
   "prismarine/tests/spinner.lua",

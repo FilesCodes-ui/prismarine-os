@@ -65,6 +65,36 @@ local LOGO_COLORS = {
   { name = "Rainbow", rainbow = true },
 }
 
+-- Theme presets. Each one sets UI role colors and the logo color.
+G.themes = { "Ocean", "Ember", "Forest", "Orchid", "Gold", "Mono" }
+local PRESETS = {
+  Ocean = { logo = "Blue" },
+  Ember = { logo = "Orange", hdr = "red", line = "orange", sel = "orange", selText = "black",
+    barBtn = "red", barOn = "orange", info = "orange", toastSys = "red" },
+  Forest = { logo = "Emerald", hdr = "green", line = "lime", sel = "lime", selText = "black",
+    barBtn = "green", barOn = "lime", info = "lime", toastSys = "green" },
+  Orchid = { logo = "Violet", hdr = "purple", line = "magenta", sel = "pink", selText = "black",
+    barBtn = "purple", barOn = "magenta", info = "pink", toastSys = "purple" },
+  Gold = { logo = "Gold", hdr = "brown", line = "yellow", sel = "yellow", selText = "black",
+    barBtn = "brown", barOn = "yellow", info = "yellow", toastSys = "brown" },
+  Mono = { logo = "Ice", hdr = "gray", line = "lightGray", sel = "white", selText = "black",
+    barBtn = "gray", barOn = "lightGray", info = "white", toastSys = "gray" },
+}
+G.theme = "Ocean"
+
+-- Applies a preset on top of the default roles. Returns true when valid.
+function G.setTheme(name)
+  local p = PRESETS[name]
+  if not p then return false end
+  for role, cname in pairs(DEFAULT_COLORS) do G.c[role] = colors[cname] end
+  for role, cname in pairs(p) do
+    if role ~= "logo" and colors[cname] then G.c[role] = colors[cname] end
+  end
+  G.theme = name
+  G.opts.logoColor = p.logo
+  return true
+end
+
 local function readFile(path)
   if not fs.exists(path) or fs.isDir(path) then return nil end
   local h = fs.open(path, "rb")
@@ -445,11 +475,19 @@ function G.logo(dw)
   for dy = 1, dh do
     local y0, y1 = (dy - 1) * SH / dh, dy * SH / dh
     local row = {}
-    local sy = min(SH, floor(((dy - 0.5) * SH) / dh) + 1)
-    local srow = SRC[sy]
     for dx = 1, dw do
-      local sx = min(LOGO_W, floor(((dx - 0.5) * LOGO_W) / dw) + 1)
-      row[dx] = srow[sx]
+      local x0, x1 = (dx - 1) * LOGO_W / dw, dx * LOGO_W / dw
+      local sum, wsum = 0, 0
+      for sy = floor(y0) + 1, min(SH, math.ceil(y1)) do
+        local wy = min(sy, y1) - max(sy - 1, y0)
+        local srow = SRC[sy]
+        for sx = floor(x0) + 1, min(LOGO_W, math.ceil(x1)) do
+          local wx = min(sx, x1) - max(sx - 1, x0)
+          sum = sum + srow[sx] * wx * wy
+          wsum = wsum + wx * wy
+        end
+      end
+      row[dx] = (wsum > 0) and sum / wsum or 0
     end
     lv[dy] = row
     rg[dy] = ((y0 + y1) / 2 <= LOGO_SPLIT) and 1 or 2
@@ -463,7 +501,7 @@ end
 local function newScene(spr, reserve)
   local pw, ph = spr.w * 2, spr.h * 3
   local ratio = LOGO_W * 6 / (LOGO_R * 9)
-  local dw = min(87, pw - 4, floor((spr.h - reserve) * 3 * ratio))
+  local dw = min(98, pw - 4, floor((spr.h - reserve) * 3 * ratio))
   if dw < 36 then return { none = true } end
   local logo = G.logo(dw)
   local logoRows = math.ceil(logo.h / 3)
@@ -517,7 +555,7 @@ local function paintLogo(sc, canvas, t)
       local r = dy - lastGray
       local off = 0
       if not gray then
-        off = floor(sin(r * 0.95 - t * 4.2) * (0.6 + r * 0.05) * 0.8 + 0.5)
+        off = floor(sin(r * 0.95 - t * 4.2) * (0.6 + r * 0.05) * 1.2 + 0.5)
       end
       for dx = 1, dw do
         local l = lvrow[clamp(dx + off, 1, dw)]
@@ -528,10 +566,10 @@ local function paintLogo(sc, canvas, t)
               local k = 1 - math.abs(d) / 9
               l = l + k * k * 0.6
             end
-            crow[sc.ox + dx] = SLOT_GR[slotSoft(l, ngr, dx, dy)]
+            crow[sc.ox + dx] = SLOT_GR[slotFor(l, ngr, dx, dy)]
           else
             l = l * (0.86 + 0.14 * sin(dx * 0.45 + r * 0.8 - t * 3.2))
-            crow[sc.ox + dx] = SLOT_AC[slotSoft(l, nac, dx, dy)]
+            crow[sc.ox + dx] = SLOT_AC[slotFor(l, nac, dx, dy)]
           end
         end
       end
@@ -635,6 +673,7 @@ function Sprite:dash(o)
   if o.boot then
     center(self.h - 1, o.label, colors.lightGray)
   else
+    center(self.h - 2, o.status, colors.lightGray)
     center(self.h - 1, o.clock, colors.white)
     center(self.h, o.hint, colors.lightGray)
   end

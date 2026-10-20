@@ -29,6 +29,7 @@ local function paintDashboard()
 end
 
 local apps = {
+  { name = "Settings", path = "/prismarine/apps/settings.lua" },
   { name = "Counter", path = TESTS .. "counter.lua" },
   { name = "Toaster", path = TESTS .. "toaster.lua", class = "service" },
   { name = "Crasher", path = TESTS .. "crasher.lua" },
