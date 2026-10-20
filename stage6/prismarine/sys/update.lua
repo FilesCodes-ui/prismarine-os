@@ -19,7 +19,7 @@
 local U = {}
 
 local K, C, S
-local DEFAULT_BASE = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/full/stage6/"
+local DEFAULT_BASE = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/stage6/"
 local INSTALL = "/prismarine/data/install.json"
 -- Public half of the KHI release key. Signed releases verify against it.
 local RELEASE_KEY = "7f455a1c596f8b2f01a491d80e00fb58de76cfa6fd5ac14ee06c1545e7752f5c"

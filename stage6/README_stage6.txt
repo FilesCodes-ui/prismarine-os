@@ -1,8 +1,8 @@
 Prismarine v24.0 stage 6
 
 Install
-  Upload the contents of this folder to full/stage6 in your GitHub repo.
-  In game run: wget run https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/full/stage6/setup.lua
+  Upload the contents of this folder to stage6 in your GitHub repo.
+  In game run: wget run https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/stage6/setup.lua
   Keep the music file at the repo root.
 
 What is new

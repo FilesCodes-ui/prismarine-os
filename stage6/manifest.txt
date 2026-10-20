@@ -40,7 +40,7 @@
     ["prismarine/sys/net.lua"] = "e56ee3a15d16785495d316929ee3a75871d5fbbea101ac4cf09ab16cef65f962",
     ["prismarine/sys/perms.lua"] = "f4ee8919da380569c26630eb31eba20725fb3c945740459978757c02082ac253",
     ["prismarine/sys/secure.lua"] = "12464c66f63acdc02da32b56947e3f73cd096d13c6a07439951cfc989747685d",
-    ["prismarine/sys/update.lua"] = "b1f731170da6f2882c593d2fc73015d650fb820d9c4affeed7a7ea2d3cf05bce",
+    ["prismarine/sys/update.lua"] = "dc574cc469a6611352c401345317fdfeab0365c75ba40277cb36077f52d02f5b",
     ["prismarine/ui/gfx.lua"] = "cc29e8cd63f31940a0447baea958962f931e4ad38662330b8a138cb577d58c84",
     ["prismarine/ui/login.lua"] = "41eac6d5209301e2eedb8380de18df59f41004df54843156d400309b88b2ecdc",
     ["prismarine/ui/ui.lua"] = "2288024c8ca9acdead120e7850edd0fcb3339878e366c9052fa8ed884469ce40",

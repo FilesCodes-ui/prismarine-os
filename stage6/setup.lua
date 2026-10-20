@@ -1,12 +1,12 @@
 -- Prismarine OS v24 stage 6 installer.
--- Run: wget run https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/full/stage6/setup.lua
+-- Run: wget run https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/stage6/setup.lua
 --
 -- It downloads manifest.txt, then every file in it, and checks each file's
 -- SHA-256 before saving. Pixelbox_lite (MIT, 9551-Dev) comes from a pinned
 -- commit and is hash checked too. Then it installs startup.lua, so the
 -- computer boots Prismarine instead of the CraftOS shell.
 -- An old startup.lua is saved as startup.lua.bak first.
-local base = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/full/stage6/"
+local base = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/stage6/"
 local PB_URL = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/82098c8dca939b7689f119d0a577c311d4a09281/pixelbox_lite.lua"
 local PB_PATH = "/prismarine/lib/pixelbox_lite.lua"
 local PB_HASH = "e9923dc24ed6d968de668f42a3c324d0957778a709d93bc9190617c32889de99"
