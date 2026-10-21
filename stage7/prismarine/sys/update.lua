@@ -112,6 +112,8 @@ local function parseManifest(data)
   return t
 end
 
+local lastVerified = nil
+
 -- Fetch manifest.txt and its signature. Runs inside a kernel task.
 -- Returns manifest, signed ("ok" | "none"), or nil, reason.
 local function fetchManifest()
@@ -122,9 +124,12 @@ local function fetchManifest()
   if sigText then
     local hex = sigText:gsub("%s", "")
     local sig = (#hex == 128 and hex:match("^%x+$")) and C.unhex(hex) or nil
-    if not sig or not C.verify(C.unhex(RELEASE_KEY), data, sig) then
+    -- The same list and signature were already checked: skip the slow math.
+    local seen = sig and C.sha256hex(data .. hex) or nil
+    if not sig or (seen ~= lastVerified and not C.verify(C.unhex(RELEASE_KEY), data, sig)) then
       return nil, "The update list has a wrong signature. Nothing was changed."
     end
+    lastVerified = seen
     signed = "ok"
   elseif K.lockdown and K.lockdown() then
     return nil, "Archive mode only accepts signed update lists."
@@ -270,17 +275,44 @@ local function hashBig(data)
   return sha256y(data)
 end
 
-local function installedState(e)
+-- What is installed is worked out once per file and remembered. Hashing a
+-- file on every screen redraw made the Download app lag the whole computer.
+local instCache = {}
+
+local function fileKey(e)
+  local p = "/" .. e.dest
+  if not fs.exists(p) or fs.isDir(p) then return "none" end
+  local mod = 0
+  local ok, a = pcall(fs.attributes, p)
+  if ok and type(a) == "table" then mod = a.modified or 0 end
+  return fs.getSize(p) .. ":" .. mod .. ":" .. e.sha256
+end
+
+-- Cheap answer from the size alone.
+local function quickState(e)
   local p = "/" .. e.dest
   if not fs.exists(p) or fs.isDir(p) then return "none" end
   if fs.getSize(p) ~= e.size then return "update" end
-  if e.size <= 200000 then
-    local h = fs.open(p, "rb")
+  return "installed"
+end
+
+-- Exact answer. Hashes the file, so only call it inside a kernel task.
+local function checkState(e)
+  local state = quickState(e)
+  if state == "installed" and e.size <= 200000 then
+    local h = fs.open("/" .. e.dest, "rb")
     local d = h and h.readAll() or ""
     if h then h.close() end
-    return (C.sha256hex(d) == e.sha256) and "installed" or "update"
+    state = (hashBig(d) == e.sha256) and "installed" or "update"
   end
-  return "installed" -- big files: the size matches, the hash was checked when saved
+  instCache[e.dest] = { key = fileKey(e), state = state }
+  return state
+end
+
+local function installedState(e)
+  local c = instCache[e.dest]
+  if c and c.key == fileKey(e) then return c.state end
+  return quickState(e)
 end
 
 function U.storeStatus()
@@ -304,6 +336,7 @@ function U.storeRefresh()
     store.entries, store.signed = m.store, signed
     store.state = "ready"
     store.text = (#m.store == 0) and "The list is empty." or ""
+    for _, e in ipairs(m.store) do checkState(e) end
   end, function(ok, err)
     if not ok then store.state, store.text = "error", "Load failed: " .. tostring(err) end
   end)

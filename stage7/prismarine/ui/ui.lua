@@ -56,7 +56,7 @@ function M.create(K, cfg)
   }
   local ROLE_NAMES = { "bar", "barBtn", "barOn", "barText", "line", "sel", "selText", "hdr", "panel", "text", "dim", "accent", "toastSys",
     "ok", "warn", "err", "info", "hint", "toastBar" }
-  local SAVER_MODES = { "Tide", "Starfield", "Clock", "Logo drift" }
+  local SAVER_MODES = { "Tide", "Starfield", "Clock" }
   local SAVER_AFTER = { 0, 1, 2, 5, 10, 15, 30 }
 
   local function loadSettings()
@@ -138,7 +138,7 @@ function M.create(K, cfg)
 
   -- -------------------------------------------------------------- drawing
 
-  local function put(x, y, s, fg, bg)
+  local function put(x, y, s, fg, bg, raw)
     if y < 1 or y > H or x > W or s == "" then return end
     if x < 1 then
       s = s:sub(2 - x)
@@ -149,7 +149,7 @@ function M.create(K, cfg)
     native.setCursorPos(x, y)
     bg = bg or C.bg
     fg = fg or C.text
-    if s:find("%S") then fg = G.readable(fg, bg) end
+    if not raw and s:find("%S") then fg = G.readable(fg, bg) end
     native.setBackgroundColor(bg)
     native.setTextColor(fg)
     native.write(s)
@@ -492,9 +492,11 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     if S.round then
       local bcol = appsOpen and C.barOn or C.barBtn
       -- With the menu open the tab and the menu are one shape: no dark strip.
-      put(1, 1, "\149", appsOpen and bcol or C.bar, bcol)
+      -- The tab touches the screen edge. The game paints the margin with this
+      -- cell's background, so the left end is a plain cell, not a rounded half.
+      put(1, 1, " ", bcol, bcol, true)
       put(2, 1, "= Apps", C.barText, bcol)
-      put(8, 1, "\149", bcol, C.bar)
+      put(8, 1, "\149", bcol, C.bar, true)
     else
       put(1, 1, "[= Apps]", C.barText, appsOpen and C.barOn or C.barBtn)
     end
@@ -981,6 +983,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
       local spr = G.sprite(ow, oh)
       menu.spr = spr
       local thumbC = menu.drag and C.sel or C.line
+      spr.sharpRight = true -- the sidebar sits against the right wall
       spr:panel(C.panel, C.line, function(cv, pw, ph, win)
         local sc = ow - 1
         if cv then
@@ -1093,6 +1096,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     local head = icon .. (n.system and "SYSTEM" or n.from) .. ": " .. n.title
     if tk.count > 1 then head = head .. " x" .. tk.count end
     local spr = G.sprite(TWo, THo)
+    spr.sharpRight = (S.toastSide ~= "left") -- square on the side that meets the wall
     spr:panel(C.panel, accent)
     spr:text(2, 2, " " .. pad(head, TW - 1), C.text, titleBg)
     local body = n.text
@@ -1749,19 +1753,6 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     native.setCursorBlink(false)
   end
 
-  local function saverLogo(now)
-    local t = now - saver.t0
-    local ox = floor(math.sin(t * 0.13) * 6 + 0.5)
-    local oy = floor(math.sin(t * 0.09 + 1) * 3 + 0.5)
-    dashRender()
-    if saver.ox ~= ox or saver.oy ~= oy then
-      saver.ox, saver.oy = ox, oy
-      native.setBackgroundColor(colors.black)
-      native.clear()
-    end
-    dash.spr:present(1 + ox, 1 + oy)
-  end
-
   local function saverDraw()
     local now = os.clock()
     local gap = 1 / min(10, max(2, G.opts.fps))
@@ -1772,7 +1763,6 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     if not gfxOK and mode ~= "Clock" then mode = "Clock" end
     if mode == "Tide" then saverTide(now)
     elseif mode == "Starfield" then saverStars(now)
-    elseif mode == "Logo drift" then saverLogo(now)
     else saverClock(now) end
   end
 
@@ -1944,38 +1934,6 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     enqueue(n)
   end
 
-  -- Rounded app frame: the four corner cells lose one sub-pixel to black.
-  local function roundApp()
-    local pid = K.getFocus()
-    if not pid then return end
-    local e = K.edgeRows(pid)
-    if not e then return end
-    local function colorAt(row, x)
-      local ch = row.bg:sub(x, x)
-      local idx = tonumber(ch, 16)
-      return idx and (2 ^ idx) or colors.black
-    end
-    native.setCursorBlink(false)
-    local function corner(x, y, row, ch, invert)
-      if row.text:sub(x, x) ~= " " then return end -- never hide an app's text
-      local c = colorAt(row, x)
-      native.setCursorPos(x, y)
-      if invert then
-        native.setBackgroundColor(colors.black)
-        native.setTextColor(c)
-      else
-        native.setBackgroundColor(c)
-        native.setTextColor(colors.black)
-      end
-      native.write(ch)
-    end
-    corner(1, 2, e.top, "\129")
-    corner(W, 2, e.top, "\130")
-    corner(1, H, e.bottom, "\144")
-    corner(W, H, e.bottom, "\159", true)
-    K.restoreCursor()
-  end
-
   local baseTick
   baseTick = function()
     if lock and lock.on then
@@ -1992,7 +1950,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     pump()
     drawBar()
     dashTick()
-    if S.round and not menu and not trans and not toast and K.getFocus() and not K.overlay then roundApp() end
+    -- App frames keep square corners: they meet the screen edge on every side.
     if menu then
       native.setCursorBlink(false)
       if menu.kind == "switch" then

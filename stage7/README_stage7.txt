@@ -50,6 +50,13 @@ Built-in apps (new in 24.1)
     The password maker uses strong random bytes. F2 inside an item fills the secret.
     A password change re-seals the Vault. With no password set, items are only hidden.
 
+Fixes in 24.1
+  Download app: no flicker and far less lag. The list is checked once, not on every redraw.
+  Menu and toast edges no longer show a colored bar in the screen margin.
+  The Apps tab keeps its color. Logo drift is gone from the Saver styles.
+Downloads
+  Portals: open, seal, hold open, and name Egress portals from a computer that touches a frame block.
+  It asks once to allow devices. Get it from the Download app, Official files.
 Downloads, coming next
   Shell v2, Dash, Rooms, Switchboard, remote control and turtle tools.
   They come from the Download app, not the release.

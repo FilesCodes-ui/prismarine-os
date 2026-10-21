@@ -2,12 +2,12 @@
   version = "24.1-stage7",
   files = {
     ["prismarine/apps/disks.lua"] = "7271d63aaeaddb9b8c1c71fbecf9c2892cbe1af063e69541e40ab1d732cb2d86",
-    ["prismarine/apps/download.lua"] = "b5a0460a9e6e6606e27ca88aeabcc262ed26c4596bf23992a1b0dc1c50d5778f",
+    ["prismarine/apps/download.lua"] = "b235535b4b88a658f1bfcb838988eb82b5b1ccd35aeeb96dcae9c82fdb8e5859",
     ["prismarine/apps/editor.lua"] = "13beadc98d07bc75b13e3062c26a9ebc6eb0448b154b764e349baab3d3ad33ae",
     ["prismarine/apps/messenger.lua"] = "4a5a88a44a8c9bb7056ada88187ba0e3b64647a673145d71f985f129b278e06d",
     ["prismarine/apps/others.lua"] = "1c9bce8bb158a3860f077a385fa9c65d6e0730e18e827665b2fee2b33b95d14a",
     ["prismarine/apps/programs.lua"] = "5afd029305a0a725b301788f330e613be7d2cc55f913b667c82257aea2770b0d",
-    ["prismarine/apps/settings.lua"] = "04f474725698713e61ad3b753185e8959a26d186e11e3c6ec903b686e9c4f943",
+    ["prismarine/apps/settings.lua"] = "9dc2388b466ba73a80e2acf3ae90d325d9a97b548e11e5f6800c56708af0557c",
     ["prismarine/apps/shell.lua"] = "c6c929e62fd54c1d03c6efcd569a5e9629f371fabe35fb91da9cc50893178f8d",
     ["prismarine/apps/vault.lua"] = "8ded5741e7af4cdfef30f825b7290603ba956404d4637458d940bf826c296da4",
     ["prismarine/boot.lua"] = "a3d48de61dd9fc20f6746b5c8fd35e69a264197ec5153f5c189a04afc0052662",
@@ -42,11 +42,11 @@
     ["prismarine/sys/net.lua"] = "09f07c964f616b41151a3400fbce96487d7534182ce437536f8d186ee0f4be65",
     ["prismarine/sys/perms.lua"] = "31af7a8426b175ec0c25e19a60c75842beaa0a5d037f00855bf547fb71be4de4",
     ["prismarine/sys/secure.lua"] = "2aa862b3d30e0f91e311133849c37539be3eeed9e8c8b05c30de94f35fd0834a",
-    ["prismarine/sys/update.lua"] = "d6abb950947ddbbd187e7fd0de2460fa0209a8294ed6175d5d814f1fb38fd696",
-    ["prismarine/ui/gfx.lua"] = "6dca25835b10f390d3a163046487103266aaec5d75584d774b4a7abc8a1cfb04",
+    ["prismarine/sys/update.lua"] = "908836e79f767225a0021f9f745d697f9447575b7ac681dbce3a00e83d1aaa98",
+    ["prismarine/ui/gfx.lua"] = "fe89a35e59fd60c6e27d2dc1aff7f09c608f268fda02f4c0a3df55e8cdb6b2af",
     ["prismarine/ui/login.lua"] = "bda1e699d53fddf9f3d67ad7d3e1c5375f1f7b9a27c906e2a96eb8b51cfbbec9",
     ["prismarine/ui/saverart.lua"] = "164c48fab01b6ef905bb1a6d787709e45ca8a7993377c895bddb80befe39fb72",
-    ["prismarine/ui/ui.lua"] = "1c566f998e80a3638551ca1027b57c55d9ddab90ebbaa105b2ae95e455bbb175",
+    ["prismarine/ui/ui.lua"] = "5a5c6a66305e8cb1d8ff1f34db4974a497d1ebde36c9445c4baf383da6a17cbc",
     ["startup.lua"] = "020a1ab26067cf0982eb073b5bccca009be08866a99cfc5a2c43a16e093163e2",
   },
   addons = {
@@ -54,6 +54,7 @@
   },
   store = {
     { name = "Audio", about = "DFPWM music player with a visualizer", dest = "programs/audio.lua", sha256 = "e12fb196e12aacf702198a5f1b314bb08ea9b75f809626c42260e661ab24ceb8", size = 51172, file = "store/p.audio_v3.lua" },
+    { name = "Portals", about = "Open, seal and name Egress portals from a computer", dest = "programs/portals.lua", sha256 = "73b1fe2cbe7a3bb46aee43d46f161b6d9443932ef0435341c38a61ee6e303289", size = 15905, file = "store/p.portals_v1.lua" },
     { name = "Living Mice", about = "Music track for Audio (1 MB)", dest = "music/Living Mice.dfpwm", sha256 = "6b039d139e51a50903281a1a688cf50652022fb0ce903bd12e1b285a0dc74c82", size = 1065018, url = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/1-05.%20Living%20Mice.dfpwm" },
   },
 }

@@ -133,7 +133,7 @@ local function pages()
           fmt = function(v) return v == 0 and "Never" or (v .. " min") end,
           help = "Idle time before the saver starts. Any key or click ends it." },
         { kind = "choice", label = "Style", key = "saverMode", value = s.saverMode, list = ui.saverModes,
-          help = "Tide has waves and the PRISMARINE name. The others are Starfield, Clock and Logo drift." },
+          help = "Tide has waves and the PRISMARINE name. The others are Starfield and Clock." },
         { kind = "toggle", label = "Show name", key = "saverLogo", value = s.saverLogo,
           help = "Shows PRISMARINE over the waves in Tide." },
         { kind = "toggle", label = "Follow logo color", key = "saverLink", value = s.saverLink,

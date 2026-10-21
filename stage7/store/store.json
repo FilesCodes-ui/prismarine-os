@@ -1,4 +1,22 @@
 [
-  {"name": "Audio", "about": "DFPWM music player with a visualizer", "file": "store/p.audio_v3.lua", "dest": "programs/audio.lua"},
-  {"name": "Living Mice", "about": "Music track for Audio (1 MB)", "url": "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/1-05.%20Living%20Mice.dfpwm", "sha256": "6b039d139e51a50903281a1a688cf50652022fb0ce903bd12e1b285a0dc74c82", "size": 1065018, "dest": "music/Living Mice.dfpwm"}
+  {
+    "name": "Audio",
+    "about": "DFPWM music player with a visualizer",
+    "file": "store/p.audio_v3.lua",
+    "dest": "programs/audio.lua"
+  },
+  {
+    "name": "Portals",
+    "about": "Open, seal and name Egress portals from a computer",
+    "file": "store/p.portals_v1.lua",
+    "dest": "programs/portals.lua"
+  },
+  {
+    "name": "Living Mice",
+    "about": "Music track for Audio (1 MB)",
+    "url": "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/1-05.%20Living%20Mice.dfpwm",
+    "sha256": "6b039d139e51a50903281a1a688cf50652022fb0ce903bd12e1b285a0dc74c82",
+    "size": 1065018,
+    "dest": "music/Living Mice.dfpwm"
+  }
 ]

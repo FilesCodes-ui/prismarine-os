@@ -76,8 +76,7 @@ local function tabs()
   hits[#hits + 1] = { 25, 1, 37, 1, function() tab = 2 end }
 end
 
-local function drawOfficial()
-  local st = store.status()
+local function drawOfficial(st)
   local area = H - 5
   if sel > #st.entries then sel = #st.entries end
   if sel < 1 then sel = 1 end
@@ -130,13 +129,16 @@ local function drawCustom()
   term.setCursorBlink(true)
 end
 
+-- Ask the OS for the list before clearing. A call into the OS pauses this app,
+-- and a cleared screen shown during that pause is the flicker.
 local function draw()
   hits = {}
+  local st = (tab == 1 and store) and store.status() or nil
   term.setBackgroundColor(colors.black)
   term.clear()
   term.setCursorBlink(false)
   tabs()
-  if tab == 1 and store then drawOfficial() else drawCustom() end
+  if st then drawOfficial(st) else drawCustom() end
 end
 
 local function fetch()
@@ -184,11 +186,27 @@ end
 if store then store.refresh() end
 draw()
 local tick = os.startTimer(0.5)
+local lastSig = ""
+local skip = false
+local function signature()
+  if not (tab == 1 and store) then return "custom" .. tostring(busy) end
+  local st = store.status()
+  local n = 0
+  for _, e in ipairs(st.entries) do n = n + #tostring(e.status) end
+  local fl = (flash and os.clock() - flashAt < 3) and flash or ""
+  return table.concat({ tostring(st.state), tostring(st.busy), tostring(st.frac), tostring(st.text),
+    tostring(#st.entries), n, tostring(st.signed), fl }, "|")
+end
 while true do
   local ev = { os.pullEvent() }
   local e = ev[1]
+  skip = false
   if e == "timer" and ev[2] == tick then
     tick = os.startTimer(0.5)
+    -- Redraw only when something changed, so the screen stays still.
+    local sig = signature()
+    if sig == lastSig then skip = true end
+    lastSig = sig
   elseif e == "mouse_click" then
     for _, h in ipairs(hits) do
       if ev[4] == h[2] and ev[3] >= h[1] and ev[3] <= h[3] then h[5]() break end
@@ -232,5 +250,5 @@ while true do
       status = { explain(ev[3]), colors.orange }
     end
   end
-  draw()
+  if not skip then draw() end
 end

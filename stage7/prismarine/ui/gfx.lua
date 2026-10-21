@@ -612,6 +612,7 @@ end
 -- Fill the whole sprite and draw a 1 sub-pixel outline around it.
 function Sprite:panel(fill, line, pre)
   local w, h = self.w, self.h
+  self.edgefix = true
   if self.box then
     local cv = self.box.canvas
     local pw, ph = w * 2, h * 3
@@ -628,12 +629,14 @@ function Sprite:panel(fill, line, pre)
     end
     if G.opts.round then
       -- Cut the corner sub-pixels and soften the next ones.
+      -- A panel set against the right wall (sharpRight) keeps its wall-side
+      -- corners square. The game paints the margin with the edge cell's
+      -- background, so a square wall side shows as one clean bar.
       local cut = colors.black
       for _, y in ipairs({ 1, ph }) do
         cv[y][1] = cut
-        cv[y][pw] = cut
+        if not self.sharpRight then cv[y][pw] = cut end
       end
-      local mid = fill
       cv[2][1] = line cv[2][pw] = line cv[ph - 1][1] = line cv[ph - 1][pw] = line
       cv[1][2] = line cv[1][pw - 1] = line cv[ph][2] = line cv[ph][pw - 1] = line
     end
@@ -671,6 +674,61 @@ function Sprite:text(x, y, s, fg, bg)
   win.write(s)
 end
 
+-- The game paints the margin around the terminal with the background color of
+-- the cell at each edge. A panel border cell at the screen edge usually has the
+-- border color as its background, so a colored bar sticks out into the margin.
+-- present() re-encodes those edge cells so their background is black.
+local BLK = "f"
+local PIXBIT = { 1, 2, 4, 8, 16 } -- TL, TR, ML, MR, BL (BR is always the background)
+
+local function decodeCell(ch, fg, bg)
+  local n = ch:byte()
+  if ch == " " then n = 128 elseif n < 128 or n > 159 then return nil end
+  local p = {}
+  for i = 1, 5 do p[i] = (math.floor((n - 128) / PIXBIT[i]) % 2 == 1) and fg or bg end
+  p[6] = bg
+  return p
+end
+
+local function encodeCell(p)
+  local n, lit, best = 0, nil, 0
+  local seen = {}
+  for i = 1, 5 do
+    local c = p[i]
+    if c ~= BLK then
+      n = n + PIXBIT[i]
+      seen[c] = (seen[c] or 0) + 1
+      if seen[c] > best then best, lit = seen[c], c end
+    end
+  end
+  if n == 0 then return " ", BLK, BLK end
+  return string.char(128 + n), lit, BLK
+end
+
+-- side "l": the corner pixel next to the border is cut. side "r": the cell moves one sub-pixel left.
+local function fixEdgeCell(side, ch, fg, bg)
+  if bg == BLK then return ch, fg, bg end
+  local p = decodeCell(ch, fg, bg)
+  if not p then return ch, fg, bg end
+  if side == "l" then
+    p[6] = BLK
+    return encodeCell(p)
+  end
+  return encodeCell({ p[2], BLK, p[4], BLK, p[6], BLK })
+end
+
+local function fixEdges(t, f, b, c1, c2, doLeft, doRight)
+  local function swap(i, side)
+    local ch, fg, bg = fixEdgeCell(side, t:sub(i, i), f:sub(i, i), b:sub(i, i))
+    t = t:sub(1, i - 1) .. ch .. t:sub(i + 1)
+    f = f:sub(1, i - 1) .. fg .. f:sub(i + 1)
+    b = b:sub(1, i - 1) .. bg .. b:sub(i + 1)
+  end
+  if doLeft then swap(1, "l") end
+  if doRight then swap(#t, "r") end
+  return t, f, b
+end
+
 -- Copy sprite rows r1..r2 to the real screen at (x, y). Clips to the screen.
 -- Rows that would land above screen row `miny` (default 1) are skipped.
 function Sprite:present(x, y, r1, r2, miny)
@@ -688,8 +746,12 @@ function Sprite:present(x, y, r1, r2, miny)
     local yy = y + r - 1
     if yy >= miny and yy <= H then
       local t, f, b = self.win.getLine(r)
+      t, f, b = t:sub(c1, c2), f:sub(c1, c2), b:sub(c1, c2)
+      if self.edgefix then
+        t, f, b = fixEdges(t, f, b, c1, c2, dx == 1, dx + (c2 - c1) == W and not self.sharpRight)
+      end
       nat.setCursorPos(dx, yy)
-      nat.blit(t:sub(c1, c2), f:sub(c1, c2), b:sub(c1, c2))
+      nat.blit(t, f, b)
     end
   end
 end
