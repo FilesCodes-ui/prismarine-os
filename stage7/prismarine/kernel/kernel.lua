@@ -173,7 +173,7 @@ function K.notifySystem(title, text, level, pid)
   })
 end
 
-K.VERSION = "24.0-stage7"
+K.VERSION = "24.1-stage7"
 
 -- Capability APIs. Services (the UI, the network, the Archive) register a
 -- maker here; an app gets one only when its spec lists that capability.

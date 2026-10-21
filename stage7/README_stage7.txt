@@ -36,5 +36,20 @@ What is new
   Apps
     A program header may sit up to 20 lines down, below the banner.
 
-Not included yet
-  Editor, Shell v2 download, remote control and the other new apps. They come next.
+Built-in apps (new in 24.1)
+  Editor
+    Edit text, Lua and JSON files. Colors follow the code as you type.
+    Make new files and folders from the Open window (Ctrl+O, then N or M) or with Ctrl+N.
+    Select with Shift and the arrows. Copy, cut, paste, undo, redo, find, go to line.
+    Saving a Lua file checks it and shows the line of any mistake. JSON gets checked too.
+    Files up to 300 KB. Hidden while Bunker mode is on.
+  Vault
+    A short list of logins, keys and notes, sealed with a key made from your password.
+    It asks for the password every time it opens and locks itself after 90 quiet seconds.
+    The secret stays hidden until you press S, and hides again after 10 seconds.
+    The password maker uses strong random bytes. F2 inside an item fills the secret.
+    A password change re-seals the Vault. With no password set, items are only hidden.
+
+Downloads, coming next
+  Shell v2, Dash, Rooms, Switchboard, remote control and turtle tools.
+  They come from the Download app, not the release.

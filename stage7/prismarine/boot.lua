@@ -565,6 +565,74 @@ local function main()
     }
   end
 
+  -- ----------------------------------------------------------- vault
+  -- The Vault keeps a short list of secrets, sealed with a key made from the
+  -- password. The file sits in /prismarine/secure, which no app can see.
+  -- Only the built-in Vault app is given this capability.
+  local VAULT_FILE = "vault"
+  local VAULT_MAX_ITEMS, VAULT_MAX_BYTES = 100, 60000
+  local VAULT_LIMITS = { title = 40, user = 60, secret = 120, note = 200 }
+  local function vaultClean(items)
+    if type(items) ~= "table" or #items > VAULT_MAX_ITEMS then return nil end
+    local out, total = {}, 0
+    for i, it in ipairs(items) do
+      if type(it) ~= "table" then return nil end
+      local row = {}
+      for field, max in pairs(VAULT_LIMITS) do
+        local v = it[field]
+        if v == nil then v = "" end
+        if type(v) ~= "string" then return nil end
+        row[field] = v:sub(1, max)
+        total = total + #row[field]
+      end
+      row.changed = tonumber(it.changed) or 0
+      out[i] = row
+    end
+    if total > VAULT_MAX_BYTES then return nil end
+    return out
+  end
+  local function vaultLoad()
+    if not S.unlocked() then return nil, "locked" end
+    local t = S.readTable(VAULT_FILE)
+    if not t then return {} end
+    local data = S.openTable("vault", t.box)
+    if not data then return nil, "unreadable" end
+    return data.items or {}
+  end
+  S.rekeyHooks[#S.rekeyHooks + 1] = function(oldKek, newKek)
+    local t = S.readTable(VAULT_FILE)
+    if not t then return end
+    local plain = C.open(C.kdf("prismarine v1 vault")(oldKek), C.unhex(t.box), "vault")
+    local data = plain and C.decode(plain)
+    if data then S.writeTable(VAULT_FILE, { v = 1, box = S.sealTable("vault", data) }) end
+  end
+  K.caps.vault = function(p)
+    return {
+      mode = function() return S.hasPassword() and "password" or "open" end,
+      load = function()
+        local items, why = K.await(p, vaultLoad)
+        if not items then return nil, why end
+        return items
+      end,
+      save = function(items)
+        local clean = vaultClean(items)
+        if not clean then return false, "Too much data" end
+        local good, why = K.await(p, function()
+          if not S.unlocked() then return false, "locked" end
+          S.writeTable(VAULT_FILE, { v = 1, box = S.sealTable("vault", { items = clean }) })
+          return true
+        end)
+        return good == true, why
+      end,
+      -- Fresh random bytes for the password maker.
+      random = function(n)
+        n = tonumber(n) or 16
+        if n < 1 then n = 1 elseif n > 64 then n = 64 end
+        return C.bytes(math.floor(n))
+      end,
+    }
+  end
+
   -- ----------------------------------------------------------- apps
   local A = "/prismarine/apps/"
   local candidates = {
@@ -572,7 +640,9 @@ local function main()
     { name = "Archive", path = A .. "archive.lua", caps = { "archive" }, hidden = function() return not N.isArchive() end },
     { name = "Programs", path = A .. "programs.lua", caps = { "net", "launch", "tools" }, hidden = bunker },
     { name = "Disks", path = A .. "disks.lua", hidden = bunker },
+    { name = "Editor", path = A .. "editor.lua", hidden = bunker },
     { name = "Download", path = A .. "download.lua", caps = { "tools", "store" }, hidden = bunker },
+    { name = "Vault", path = A .. "vault.lua", caps = { "vault", "account" } },
     { name = "Shell", path = A .. "shell.lua", terminate = true, locked = lockdown, system = true },
     { name = "Settings", path = A .. "settings.lua", caps = { "settings", "netadmin", "account", "perms" } },
     { name = "Others", path = A .. "others.lua", caps = { "settings", "account", "net", "update" } },
