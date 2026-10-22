@@ -42,6 +42,18 @@ K.notifications = {}
 K.overlay = false      -- true while a menu hides the focused app's window
 
 local nativeTerm = term.native()
+-- Every app window and the whole UI draw into this frame buffer. It sends the
+-- screen only the cells that changed, once per event, so a half drawn frame
+-- never shows. If the file is missing the windows draw straight to the screen.
+local screen = nil
+do
+  local ok, mod = pcall(dofile, "/prismarine/ui/screen.lua")
+  if ok and type(mod) == "table" and mod.new then
+    local ok2, scr = pcall(mod.new, nativeTerm)
+    if ok2 then screen = scr end
+  end
+end
+K.screen = screen
 local procs, order = {}, {}
 local nextPid = 1
 local focused = nil
@@ -76,6 +88,7 @@ local BUFFERED = {
   http_success = true, http_failure = true, http_check = true,
   websocket_success = true, websocket_failure = true,
   websocket_message = true, websocket_closed = true,
+  peripheral_response = true, task_complete = true,
 }
 
 local function pack(...)
@@ -173,7 +186,7 @@ function K.notifySystem(title, text, level, pid)
   })
 end
 
-K.VERSION = "24.1-stage7"
+K.VERSION = "24.3-stage7"
 
 -- Capability APIs. Services (the UI, the network, the Archive) register a
 -- maker here; an app gets one only when its spec lists that capability.
@@ -503,6 +516,17 @@ local function route(ev)
     return
   end
 
+  -- A device call that runs on the server thread (Egress portals, many
+  -- peripherals) finishes with task_complete. Only an app that waits for it gets
+  -- it. Without this the call never returned and the app stayed stuck.
+  if name == "peripheral_response" or name == "task_complete" then
+    for _, pid in ipairs(snapshotPids()) do
+      local p = procs[pid]
+      if p and p.alive and p.filter == name then deliver(p, ev) end
+    end
+    return
+  end
+
   if BROADCAST[name] then
     for _, pid in ipairs(snapshotPids()) do
       local p = procs[pid]
@@ -545,7 +569,7 @@ function K.spawn(spec)
     name = spec.name or fs.getName(spec.path),
     spec = spec,
     gen = 0,
-    win = window.create(nativeTerm, x, y, w, h, false),
+    win = window.create(screen or nativeTerm, x, y, w, h, false),
   }
   p.home = K.homeDir(spec)
   p.checkPerm = function(perm, detail) return K.checkPerm(p, perm, detail) end

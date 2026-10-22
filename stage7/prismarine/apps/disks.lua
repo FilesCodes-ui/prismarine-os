@@ -62,43 +62,105 @@ end
 
 local function atTop() return cwd == nil end
 
+local kit = dofile("/prismarine/ui/kit.lua")
 local hits = {}
+local function kb(n)
+  if n >= 1048576 then return ("%.1f MB"):format(n / 1048576) end
+  if n >= 1024 then return ("%.1f KB"):format(n / 1024) end
+  return n .. " B"
+end
+local function space(path)
+  local okc, cap = pcall(fs.getCapacity, path)
+  local okf, free = pcall(fs.getFreeSpace, path)
+  if okc and okf and type(cap) == "number" and cap > 0 then return cap, free end
+  return nil
+end
+
 local function draw()
-  term.setBackgroundColor(colors.black)
-  term.clear()
+  W, H = term.getSize()
   hits = {}
+  local s = kit.scene()
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
   if viewing then
-    put(1, 1, (" " .. viewing.name .. "   Backspace: close" .. string.rep(" ", W)):sub(1, W), colors.white, colors.gray)
-    for i = 1, H - 1 do
+    s:header("View", viewing.name, #viewing.lines .. " lines")
+    local ch = H - 4
+    s:card(2, 3, W - 2, ch, gray)
+    local area = ch - 2
+    for i = 1, area do
       local l = viewing.lines[vtop + i]
-      if l then put(1, 1 + i, l:sub(1, W), colors.white) end
+      if l then s:text(3, 3 + i, kit.fit(l, W - 5), text, gray) end
     end
+    s:scroll(W - 1, 4, area, #viewing.lines, vtop, area)
+    s:hints(H - 1, { { "Up/Down", "scroll" }, { "PgUp/PgDn", "page" }, { "Esc", "back" } })
+    s:flush()
     return
   end
-  put(1, 1, (" " .. (atTop() and "Disks and ROM" or ("/" .. cwd)) .. string.rep(" ", W)):sub(1, W), colors.white, colors.gray)
-  local area = H - 3
+  s:header("Disks", atTop() and "Computer, ROM and drives" or ("/" .. cwd), #items .. (#items == 1 and " item" or " items"))
   if sel > #items then sel = #items end
   if sel < 1 then sel = 1 end
-  if sel - 1 < top then top = sel - 1 end
-  if sel > top + area then top = sel - area end
-  for i = 1, area do
-    local it = items[top + i]
-    if it then
-      local on = (top + i == sel)
-      local bg = on and colors.cyan or colors.black
-      put(1, 1 + i, string.rep(" ", W), colors.white, bg)
-      put(2, 1 + i, ((it.dir and "[D] " or "    ") .. it.name):sub(1, W - 16), on and colors.black or (it.dir and colors.lightBlue or colors.white), bg)
-      put(W - 13, 1 + i, (it.tag or ""):sub(1, 13), on and colors.black or colors.gray, bg)
-      local idx = top + i
-      hits[#hits + 1] = { 1, 1 + i, W, 1 + i, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+  local ch = H - 5
+  if atTop() then
+    -- volume cards, 5 rows each
+    local per = math.max(1, math.floor((ch + 1) / 6))
+    if sel - 1 < top then top = sel - 1 end
+    if sel > top + per then top = sel - per end
+    if top < 0 then top = 0 end
+    for i = 1, per do
+      local it = items[top + i]
+      if it then
+        local idx = top + i
+        local y = 3 + (i - 1) * 6
+        local on = idx == sel
+        s:card(2, y, W - 3, 5, gray, on and kit.c("line") or nil)
+        local tagRoom = (it.tag ~= "") and (#it.tag + 4) or 0
+        local narrow = W - 8 - tagRoom < 12
+        s:text(4, y + 1, kit.fit(it.name, W - 8 - (narrow and 0 or tagRoom)), on and kit.c("line") or text, gray)
+        if it.tag ~= "" and not narrow then s:badge(W - #it.tag - 5, y + 1, it.tag, it.tag == "read only" and "warn" or "info") end
+        local cap, free = nil, nil
+        if it.path then cap, free = space(it.path) end
+        if cap then
+          s:meter(4, y + 2, W - 8, (cap - free) / cap, kit.c("line"), kit.c("bg"))
+          local r = kb(free) .. " free"
+          if W - 8 >= #r + 14 then s:text(4, y + 3, kb(cap - free) .. " used", text, gray) end
+          s:text(W - 3 - #r, y + 3, r, hint, gray)
+        elseif not it.path then
+          s:text(4, y + 2, "No disk inserted", hint, gray)
+        else
+          s:text(4, y + 2, kit.fit(narrow and it.tag or "Size not available", W - 8), hint, gray)
+        end
+        hits[#hits + 1] = { 2, y, W - 2, y + 4, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+      end
     end
+    s:scroll(W, 3, ch, #items, top, per)
+  else
+    s:card(2, 3, W - 2, ch, gray)
+    local area = ch - 2
+    if sel - 1 < top then top = sel - 1 end
+    if sel > top + area then top = sel - area end
+    if top < 0 then top = 0 end
+    for i = 1, area do
+      local it = items[top + i]
+      if it then
+        local idx = top + i
+        s:row(3, 3 + i, W - 4, (it.dir and "> " or "  ") .. it.name .. (it.dir and "/" or ""), idx == sel,
+          { right = it.tag ~= "" and it.tag or nil, fg = it.dir and kit.c("info") or nil })
+        hits[#hits + 1] = { 3, 3 + i, W - 2, 3 + i, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+      end
+    end
+    s:scroll(W - 1, 4, area, #items, top, area)
+    if #items == 0 then s:empty(2, 3, W - 2, ch, { "This folder is empty", "Press N to make a folder." }) end
   end
-  put(1, H - 1, " Enter open  V view  C copy  P paste  D delete  N folder", colors.cyan)
   if ask then
-    put(1, H - 2, (" " .. ask.text .. (ask.input and (" " .. ask.input) or " [Y/N]") .. string.rep(" ", W)):sub(1, W), colors.black, colors.yellow)
+    local q = ask.text .. (ask.input and (" " .. ask.input .. "_") or "  Y yes   N no")
+    s:card(2, H - 2, W - 2, 1, kit.c("warn"))
+    s:text(3, H - 2, kit.fit(q, W - 4), colors.black, kit.c("warn"))
   elseif flash and os.clock() - flashAt < 5 then
-    put(1, H, (" " .. flash .. string.rep(" ", W)):sub(1, W), colors.orange)
+    s:status(H - 2, flash, "warn")
   end
+  s:hints(H - 1, atTop()
+    and { { "Enter", "open" }, { "R", "refresh" }, { "Q", "quit" } }
+    or { { "Enter", "open" }, { "Bksp", "up" }, { "V", "view" }, { "C", "copy" }, { "P", "paste" }, { "D", "delete" }, { "N", "folder" }, { "Q", "quit" } }, 1)
+  s:flush()
 end
 
 local function tryfs(fn, ...)

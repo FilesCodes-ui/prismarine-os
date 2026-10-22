@@ -42,35 +42,71 @@ local function refresh()
   table.sort(list, function(a, b) return a.name < b.name end)
 end
 
+local kit = dofile("/prismarine/ui/kit.lua")
+local run, ask
 local hits = {}
+local function hit(x, y, w, fn) hits[#hits + 1] = { x, y, x + w - 1, y, fn } end
+
 local function draw()
-  term.setBackgroundColor(colors.black)
-  term.clear()
+  W, H = term.getSize()
   hits = {}
-  put(1, 1, (" Programs   (" .. DIR .. ")" .. string.rep(" ", W)):sub(1, W), colors.white, colors.gray)
-  local area = H - 4
+  local s = kit.scene()
+  s:header("Programs", DIR, #list .. (#list == 1 and " program" or " programs"))
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  local narrow = W < 40
+  local lw = narrow and (W - 2) or math.min(26, math.floor(W * 0.42))
+  local ch = H - 5
+  local area = ch - 2
   if sel > #list then sel = #list end
   if sel < 1 then sel = 1 end
   if sel - 1 < top then top = sel - 1 end
   if sel > top + area then top = sel - area end
+  if top < 0 then top = 0 end
+  s:card(2, 3, lw, ch, gray)
+  if not narrow then s:card(lw + 3, 3, W - lw - 3, ch, gray) end
+  if #list == 0 then
+    s:empty(2, 3, lw, ch, { "No programs yet", "Put .lua files", "in " .. DIR, "then press R." })
+  end
   for i = 1, area do
     local p = list[top + i]
     if p then
-      local on = (top + i == sel)
-      put(1, 1 + i, (" " .. p.name .. string.rep(" ", W)):sub(1, W), on and colors.black or colors.white, on and colors.cyan or colors.black)
-      put(W - 12, 1 + i, ("%6d B"):format(p.size), on and colors.black or colors.gray, on and colors.cyan or colors.black)
       local idx = top + i
-      hits[#hits + 1] = { 1, 1 + i, W, 1 + i, function() sel = idx end }
+      s:row(3, 3 + i, lw - 2, p.name, idx == sel, { right = ("%.1f KB"):format(p.size / 1024) })
+      hit(3, 3 + i, lw - 2, function() sel = idx end)
     end
   end
-  if #list == 0 then put(2, 3, "No programs yet. Put .lua files in " .. DIR, colors.gray) end
+  s:scroll(narrow and (W - 1) or (lw + 1), 4, area, #list, top, area)
   local p = list[sel]
-  if p then put(1, H - 2, (" sha256 " .. p.hash:sub(1, 32)):sub(1, W), colors.gray) end
-  put(1, H - 1, " Enter: run   A: ask Archive to approve   R: refresh", colors.cyan)
-  if flash and os.clock() - flashAt < 5 then put(1, H, (" " .. flash .. string.rep(" ", W)):sub(1, W), colors.orange) end
+  local dx, dw = lw + 5, W - lw - 7
+  if narrow then
+    -- list only on a small screen
+  elseif p then
+    s:text(dx, 4, kit.fit(p.name, dw), text, gray)
+    s:text(dx, 5, ("%d bytes"):format(p.size), hint, gray)
+    s:rule(dx, 6, dw, kit.c("hdr"))
+    s:text(dx, 7, "File", hint, gray)
+    s:text(dx + 6, 7, kit.fit(p.path, dw - 6), text, gray)
+    s:text(dx, 8, "Hash", hint, gray)
+    s:text(dx + 6, 8, kit.fit(p.hash:sub(1, 16), dw - 6), text, gray)
+    s:text(dx + 6, 9, kit.fit(p.hash:sub(17, 32), dw - 6), text, gray)
+    local by = 3 + ch - 2
+    local nx = s:pill(dx, by, "Run", kit.c("ok"), colors.black)
+    hit(dx, by, 5, run)
+    local ax, ay = nx, by
+    if dw < 19 then ax, ay = dx, by - 1 end
+    s:pill(ax, ay, "Ask Archive", kit.c("hdr"), kit.c("barText"))
+    hit(ax, ay, 13, ask)
+  else
+    s:empty(lw + 3, 3, W - lw - 3, ch, { "Nothing selected" })
+  end
+  if flash and os.clock() - flashAt < 5 then
+    s:status(2, flash, "warn")
+  end
+  s:hints(H - 1, { { "Enter", "run" }, { "A", "ask Archive" }, { "R", "refresh" }, { "Q", "quit" } })
+  s:flush()
 end
 
-local function run()
+function run()
   local p = list[sel]
   if not p then return end
   if not launch then note("Launching is not available.") return end
@@ -78,7 +114,7 @@ local function run()
   if pid then note("Started " .. p.name) else note(why or "Blocked") end
 end
 
-local function ask()
+function ask()
   local p = list[sel]
   if not p then return end
   if not net then note("No network access.") return end

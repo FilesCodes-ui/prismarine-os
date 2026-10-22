@@ -44,38 +44,41 @@ local function watch(ev)
   return false
 end
 
-local function put(x, y, s, fg, bg)
-  term.setCursorPos(x, y)
-  term.setTextColor(fg or colors.white)
-  term.setBackgroundColor(bg or colors.black)
-  term.write(s)
+local kit = dofile("/prismarine/ui/kit.lua")
+local S = nil
+local function put(x, y, str, fg, bg)
+  if S and not S.done then S:text(x, y, str, fg, bg) return end
+  kit.put(x, y, str, fg, bg or colors.black)
 end
-local function pad(s, n)
-  if #s > n then return s:sub(1, n) end
-  return s .. string.rep(" ", n - #s)
+local function pad(str, n)
+  if #str > n then return str:sub(1, n) end
+  return str .. string.rep(" ", n - #str)
 end
 local function note(t, c)
   flash, flashColor, flashAt = t, c or colors.lightGray, os.clock()
   os.startTimer(6)
 end
 local function bar(text, right)
-  put(1, 1, pad(" Vault", W), colors.cyan, colors.gray)
-  put(9, 1, text or "", colors.white, colors.gray)
-  if right then put(W - #right, 1, right, colors.lightGray, colors.gray) end
+  S:header("Vault", text, right)
 end
 local function footer(a, b)
-  put(1, H - 1, pad(" " .. (a or ""), W), colors.cyan)
   if flash and os.clock() - flashAt < 6 then
-    put(1, H, pad(" " .. flash, W), flashColor)
+    local bad = (flashColor == colors.red or flashColor == colors.orange)
+    S:status(2, flash, bad and "err" or "ok")
+    S:hintText(H - 2, (a or "") .. "   " .. (b or ""), 2)
   else
-    put(1, H, pad(" " .. (b or ""), W), colors.gray)
+    S:hintText(H - 2, (a or "") .. "   " .. (b or ""), 2)
   end
 end
 local function clear()
   term.setCursorBlink(false)
-  term.setBackgroundColor(colors.black)
-  term.clear()
+  W, H = term.getSize()
+  S = kit.scene()
   hits = {}
+end
+local function present()
+  S:flush()
+  S.done = true
 end
 
 -- ------------------------------------------------------------ line editing
@@ -134,11 +137,18 @@ local function generator(canUse)
   while true do
     clear()
     bar("Make a password")
-    put(2, 3, "Length   " .. len .. "   (Left / Right to change)", colors.white)
-    put(2, 4, "Symbols  " .. (symbols and "on " or "off") .. "   (S to switch)", colors.white)
-    put(2, 7, pad(" " .. pw, math.min(W - 2, len + 2)), colors.white, colors.gray)
-    put(2, 9, "Made with strong random bytes. Nothing is saved.", colors.gray)
-    footer("R: new one   " .. (canUse and "Enter: use it   " or "") .. "Esc: back")
+    local gray = kit.c("bar")
+    S:card(2, 3, W - 2, 12, gray)
+    S:text(4, 4, "Length", kit.c("hint"), gray)
+    S:meter(14, 4, W - 22, (len - 8) / 24, kit.c("line"), kit.c("bg"))
+    S:text(W - 7, 4, tostring(len), kit.c("barText"), gray)
+    S:text(4, 6, "Symbols", kit.c("hint"), gray)
+    S:switch(14, 6, symbols)
+    S:card(4, 9, W - 6, 3, kit.c("bg"))
+    S:text(6, 10, kit.fit(pw, W - 10), kit.c("ok"), kit.c("bg"))
+    S:text(4, 13, "Made with strong random bytes. Nothing is saved.", kit.c("hint"), gray)
+    footer("R: new one   S: symbols   Left/Right: length   " .. (canUse and "Enter: use it   " or "") .. "Esc: back")
+    present()
     local ev = { os.pullEvent() }
     if watch(ev) then return nil end
     if ev[1] == "key" then
@@ -184,16 +194,18 @@ local function gate()
   while true do
     clear()
     bar("Locked")
-    put(2, 4, "Enter your password to open the Vault.", colors.white)
-    put(2, 6, "Password", colors.lightGray)
-    put(2, 7, pad(string.rep("*", #buf), 30), colors.white, colors.gray)
-    if busy then put(2, 9, "Checking...", colors.cyan)
-    elseif msg then put(2, 9, msg, colors.red) end
+    local gray = kit.c("bar")
+    S:card(math.floor(W / 2) - 16, 4, 34, 9, gray)
+    local cx = math.floor(W / 2) - 14
+    S:text(cx, 5, "Vault is locked", kit.c("barText"), gray)
+    S:text(cx, 6, "Enter your password to open it.", kit.c("hint"), gray)
+    S:field(cx, 8, 30, string.rep("*", #buf), true, false, "password")
+    if busy then S:text(cx, 10, "Checking...", kit.c("info"), gray)
+    elseif msg then S:text(cx, 10, msg, kit.c("err"), gray) end
     footer("Enter: open   Esc: close")
-    term.setCursorPos(2 + #buf, 7)
-    term.setCursorBlink(true)
-    term.setTextColor(colors.white)
-    term.setBackgroundColor(colors.gray)
+    present()
+    term.setCursorPos(math.min(W, cx + 1 + #buf), 8)
+    term.setCursorBlink(false)
     local ev = { os.pullEvent() }
     watch(ev)
     forceLock = false
@@ -203,7 +215,8 @@ local function gate()
         busy = true
         clear()
         bar("Locked")
-        put(2, 9, "Checking...", colors.cyan)
+        S:text(math.floor(W / 2) - 5, 9, "Checking...", kit.c("info"), colors.black)
+        present()
         local good = account.check(buf)
         buf, pos, busy = "", 1, false
         if good then
@@ -224,51 +237,71 @@ end
 local function drawList()
   clear()
   bar(("%d item%s"):format(#items, #items == 1 and "" or "s"), password and "protected" or "no password")
-  local rows = H - 4
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  local narrow = W < 40
+  local lw = narrow and (W - 2) or math.min(26, math.floor(W * 0.45))
+  local ch = H - 5
+  local rows = ch - 2
   if sel > #items then sel = #items end
   if sel < 1 then sel = 1 end
   if sel - 1 < top then top = sel - 1 end
   if sel > top + rows then top = sel - rows end
+  if top < 0 then top = 0 end
+  S:card(2, 3, lw, ch, gray)
+  if not narrow then S:card(lw + 3, 3, W - lw - 3, ch, gray) end
   for i = 1, rows do
     local it = items[top + i]
     if it then
       local on = top + i == sel
-      local bg = on and colors.cyan or colors.black
-      put(1, 1 + i, string.rep(" ", W), colors.white, bg)
-      put(2, 1 + i, pad(it.title, 24), on and colors.black or colors.white, bg)
-      put(27, 1 + i, pad(it.user, W - 27), on and colors.black or colors.lightGray, bg)
-      local idx = top + i
-      hits[#hits + 1] = { 1 + i, idx }
+      S:row(3, 3 + i, lw - 2, it.title, on)
+      hits[#hits + 1] = { 3 + i, top + i }
     end
   end
+  S:scroll(narrow and (W - 1) or (lw + 1), 4, rows, #items, top, rows)
   if #items == 0 then
-    put(2, 3, "Nothing here yet.", colors.white)
-    put(2, 4, "Press A to add a login, key or note.", colors.lightGray)
+    S:empty(2, 3, lw, ch, { "Nothing here", "Press A to add." })
   end
-  if not password then
-    put(1, H - 2, pad(" No password set. Items are hidden, not locked.", W), colors.orange)
+  local it = items[sel]
+  local dx, dw = lw + 5, W - lw - 7
+  if it and not narrow then
+    S:text(dx, 4, kit.fit(it.title, dw), text, gray)
+    S:rule(dx, 5, dw, kit.c("hdr"))
+    S:text(dx, 6, "User", hint, gray)
+    S:text(dx + 8, 6, kit.fit(it.user == "" and "-" or it.user, dw - 8), text, gray)
+    S:text(dx, 7, "Secret", hint, gray)
+    S:text(dx + 8, 7, it.secret == "" and "-" or string.rep("*", math.min(#it.secret, dw - 8, 12)), text, gray)
+    S:text(dx, 8, "Note", hint, gray)
+    S:text(dx + 8, 8, kit.fit(it.note == "" and "-" or it.note, dw - 8), text, gray)
+    S:text(dx, 3 + ch - 2, "Enter opens this item", hint, gray)
   end
-  footer("Enter open   A add   E edit   D delete", "G make password   L lock   Q quit")
+  if not password and not (flash and os.clock() - flashAt < 6) then
+    S:status(2, "No password set. Items are hidden, not locked.", "warn")
+  end
+  footer("Enter open   A add   E edit   D delete   G make password   L lock   Q quit")
+  present()
 end
 
 local function drawView(it)
   clear()
   bar(it.title)
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  S:card(2, 3, W - 2, H - 5, gray)
   local function field(y, label, value, color)
-    put(2, y, label, colors.lightGray)
-    put(2, y + 1, pad(value == "" and "-" or value, W - 2), color or colors.white)
+    S:text(4, y, label:upper(), hint, gray)
+    S:text(4, y + 1, kit.fit(value == "" and "-" or value, W - 8), color or text, gray)
   end
-  field(3, "User", it.user)
+  field(4, "User", it.user)
   local secret = it.secret
   if secret == "" then
-    field(6, "Secret", "")
+    field(7, "Secret", "")
   elseif shown then
-    field(6, "Secret", secret, colors.lime)
+    field(7, "Secret", secret, kit.c("ok"))
   else
-    field(6, "Secret", string.rep("*", math.min(#secret, W - 4)), colors.white)
+    field(7, "Secret", string.rep("*", math.min(#secret, W - 8)), text)
   end
-  field(9, "Note", it.note)
+  field(10, "Note", it.note)
   footer("S: " .. (shown and "hide" or "show") .. " secret   E: edit   Esc: back", shown and "The secret hides itself in 10 seconds" or "")
+  present()
 end
 
 local FIELDS = {
@@ -290,24 +323,27 @@ local function form(base)
   while true do
     clear()
     bar(base and "Edit item" or "New item")
+    local gray = kit.c("bar")
+    S:card(2, 3, W - 2, H - 5, gray)
     for i, f in ipairs(FIELDS) do
-      local y = 2 + (i - 1) * 3
-      put(2, y, f[2], i == focus and colors.cyan or colors.lightGray)
+      local y = 4 + (i - 1) * 3
+      S:text(4, y, f[2], i == focus and kit.c("line") or kit.c("hint"), gray)
       local v = vals[i]
-      local room = W - 4
+      local room = W - 8
       local from = 1
       if i == focus and pos[i] > room then from = pos[i] - room + 1 end
-      put(2, y + 1, pad(v:sub(from, from + room - 1), room + 1), colors.white, i == focus and colors.gray or colors.black)
-      if i ~= focus then hits[#hits + 1] = { y + 1, i } end
+      S:field(4, y + 1, W - 6, v:sub(from, from + room - 1), i == focus, false)
+      hits[#hits + 1] = { y + 1, i }
     end
     footer("Tab or Enter: next   Ctrl+S: save   Esc: cancel", flash and "" or "Title is required")
-    local y = 2 + (focus - 1) * 3 + 1
-    local room = W - 4
-    local from = (pos[focus] > room) and (pos[focus] - room + 1) or 1
-    term.setCursorPos(2 + pos[focus] - from, y)
-    term.setBackgroundColor(colors.gray)
-    term.setTextColor(colors.white)
-    term.setCursorBlink(true)
+    present()
+    do
+      local y = 4 + (focus - 1) * 3 + 1
+      local room = W - 8
+      local from = (pos[focus] > room) and (pos[focus] - room + 1) or 1
+      term.setCursorPos(math.min(W, 5 + pos[focus] - from), y)
+      term.setCursorBlink(false)
+    end
     local ev = { os.pullEvent() }
     if watch(ev) then return nil end
     local function finish()
@@ -356,7 +392,7 @@ end
 
 local function ask(text)
   while true do
-    put(1, H - 1, pad(" " .. text, W), colors.orange)
+    kit.put(2, H - 2, pad(" " .. text, W - 2), colors.black, kit.c("warn"))
     local ev = { os.pullEvent() }
     if watch(ev) then return false end
     if ev[1] == "char" then
@@ -370,7 +406,8 @@ end
 
 if not vault or not account then
   clear()
-  put(2, 3, "The Vault is not available here.", colors.red)
+  S:text(2, 3, "The Vault is not available here.", kit.c("err"), colors.black)
+  present()
   os.pullEvent("key")
   return
 end
@@ -381,9 +418,10 @@ local function open()
   local list, why = vault.load()
   if not list then
     clear()
-    put(2, 3, "The Vault could not be opened.", colors.red)
-    put(2, 5, tostring(why), colors.lightGray)
-    put(2, 7, "Press any key.", colors.gray)
+    S:text(2, 3, "The Vault could not be opened.", kit.c("err"), colors.black)
+    S:text(2, 5, tostring(why), kit.c("hint"), colors.black)
+    S:text(2, 7, "Press any key.", kit.c("hint"), colors.black)
+    present()
     os.pullEvent("key")
     return false
   end

@@ -27,6 +27,15 @@ local HOLDS = { 0, 10, 30, 60, 300 }
 local W, H = term.getSize()
 local color = term.isColor and term.isColor()
 
+-- Colors follow the OS theme when it is there.
+local function T(role, default)
+  local api = rawget(_G, "prismarine")
+  local c = api and api.theme and api.theme.colors
+  local v = c and c[role]
+  if type(v) == "number" then return v end
+  return default
+end
+
 -- ── Settings ────────────────────────────────────────────────────────────────
 
 local cfg = { hold = 1, names = {} }
@@ -79,6 +88,8 @@ local sel = 1
 local top = 0
 local message, messageColor, messageAt = "", colors.white, 0
 local denied = false
+local scanning = true      -- true until the first scan ends, so the screen is never blank
+local crash = nil          -- text of an error, shown on screen
 local confirmAll = 0
 local renaming = nil    -- text buffer while naming a portal
 
@@ -237,7 +248,7 @@ local function button(x, y, label, key, on, action)
 end
 
 local function detail(y, label, value, c)
-  put(2, y, fit(label, 9), colors.gray, colors.black)
+  put(2, y, fit(label, 9), colors.lightGray, colors.black)
   put(12, y, fit(value, W - 12), c or colors.white, colors.black)
 end
 
@@ -247,17 +258,42 @@ local function openCount()
   return o
 end
 
+local function hints(list)
+  local x = 2
+  put(1, H, string.rep(" ", W), colors.lightGray)
+  for _, it in ipairs(list) do
+    local need = #it[1] + 1 + #it[2] + 2
+    if x + need > W then break end
+    put(x, H, it[1], T("line", colors.cyan))
+    put(x + #it[1] + 1, H, it[2], colors.lightGray)
+    x = x + need + 1
+  end
+end
+
 local function draw()
   W, H = term.getSize()
   hits = {}
   term.setBackgroundColor(colors.black)
   term.clear()
 
-  row(1, colors.white, colors.gray)
-  put(2, 1, "Portals", colors.white, colors.gray)
-  put(10, 1, "Egress", colors.cyan, colors.gray)
+  row(1, colors.white, T("bar", colors.gray))
+  put(1, 1, " Portals ", T("barText", colors.white), T("barBtn", colors.blue))
+  put(11, 1, "Egress", T("line", colors.cyan), T("bar", colors.gray))
   local count = #portals .. (#portals == 1 and " portal" or " portals")
-  put(W - #count, 1, count, colors.lightGray, colors.gray)
+  put(W - #count, 1, count, colors.lightGray, T("bar", colors.gray))
+
+  if crash then
+    put(2, 3, "Portals stopped with an error.", colors.red)
+    put(2, 5, fit(crash, W - 2), colors.lightGray)
+    put(2, H, "Q quit", colors.cyan)
+    return
+  end
+
+  if scanning then
+    put(2, 3, "Looking for portals...", colors.yellow)
+    put(2, 5, "If a card asks about devices, choose Allow.", colors.lightGray)
+    return
+  end
 
   if #portals == 0 then
     put(2, 3, "No portal found.", colors.yellow)
@@ -266,7 +302,7 @@ local function draw()
     put(2, 7, "egress_portal and it shows up here.", colors.lightGray)
     put(2, 9, "Not on a synced block or inside the frame.", colors.gray)
     if denied then put(2, 11, "Devices are not allowed. See Settings, App access.", colors.red) end
-    put(2, H, "R rescan   Q quit", colors.cyan)
+    hints({ { "R", "rescan" }, { "Q", "quit" } })
     return
   end
 
@@ -283,7 +319,7 @@ local function draw()
     local y = listTop + i - 1
     if p then
       local on = (idx == sel)
-      local bg = on and colors.cyan or colors.black
+      local bg = on and T("sel", colors.lightBlue) or colors.black
       row(y, colors.white, bg)
       local state, sc
       if not p.info then state, sc = "ERROR", colors.red
@@ -300,7 +336,7 @@ local function draw()
   if top + listRows < #portals then put(W, listTop + listRows - 1, "v", colors.gray) end
 
   local y0 = listTop + listRows
-  put(1, y0, string.rep("-", W), colors.gray)
+  put(1, y0, string.rep("\140", W), colors.lightGray)
   local p = portals[sel]
   if p then
     if p.info then
@@ -345,8 +381,8 @@ local function draw()
     renaming = cfg.names[p.info.id] or ""
   end)
 
-  put(2, H, "A open all  X seal all  R rescan  Q quit", colors.cyan)
-  if confirmAll > now() then put(2, H, fit("Press X again to seal all portals.", W - 2), colors.yellow) end
+  hints({ { "A", "open all" }, { "X", "seal all" }, { "R", "rescan" }, { "Q", "quit" } })
+  if confirmAll > now() then put(1, H, fit(" Press X again to seal all portals.", W), colors.black, colors.yellow) end
 end
 
 -- ── Actions ─────────────────────────────────────────────────────────────────
@@ -395,14 +431,22 @@ end
 -- ── Main loop ───────────────────────────────────────────────────────────────
 
 loadCfg()
-rescan()
+draw()                      -- show the screen first. The first scan can wait for a permission card.
+do
+  local ok, err = pcall(rescan)
+  if not ok then crash = tostring(err) end
+  scanning = false
+end
 local tick = os.startTimer(1)
 local scanAt = now()
 
+local function runLoop()
 while true do
   draw()
   local ev, a, b, c = os.pullEventRaw()
-  if ev == "terminate" then break
+  if crash then
+    if ev == "terminate" or (ev == "char" and a:lower() == "q") then break end
+  elseif ev == "terminate" then break
   elseif ev == "timer" and a == tick then
     checkHolds()
     if now() - scanAt >= 5 then rescan(); scanAt = now() else poll() end
@@ -441,6 +485,18 @@ while true do
     elseif k == "n" then
       if p and p.info then renaming = cfg.names[p.info.id] or "" end
     elseif k == "r" then rescan(); say("Scanned.", colors.cyan) end
+  end
+end
+
+end
+
+local ok, err = pcall(runLoop)
+if not ok then
+  crash = tostring(err)
+  while true do
+    draw()
+    local ev, a = os.pullEventRaw()
+    if ev == "terminate" or (ev == "char" and tostring(a):lower() == "q") then break end
   end
 end
 

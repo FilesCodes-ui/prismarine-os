@@ -32,7 +32,11 @@ function M.create(K, cfg)
   local settingsPath = cfg.settingsPath or "/prismarine/data/ui_settings.json"
   local dashHint = cfg.dashHint or "Left Alt: Apps   Right Alt: Switch"
 
-  local native = term.native()
+  local realTerm = term.native()
+  -- The kernel's frame buffer. App windows draw into it too, so the whole
+  -- screen leaves in one finished frame per event.
+  local native = K.screen or dofile("/prismarine/ui/screen.lua").new(realTerm)
+  native.invalidate()   -- the splash and login wrote to the screen directly
   local W, H = native.getSize()
 
   local floor, min, max = math.floor, math.min, math.max
@@ -43,6 +47,8 @@ function M.create(K, cfg)
 
   local G = cfg.gfx or dofile("/prismarine/ui/gfx.lua")
   local gfxOK = G.init(cfg.themePath)
+  G.scr = native   -- every sprite goes through the frame buffer
+
   local C = G.c
 
   -- ------------------------------------------------------------ settings
@@ -453,11 +459,19 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
   -- ---------------------------------------------------------- base repaint
 
   -- Put back whatever sits under overlays: the focused app, or the dashboard.
+  -- With an overlay up, the app window is hidden. Its current picture comes
+  -- from a snapshot and goes through the frame buffer, so the menu and what
+  -- is under it reach the screen together in one finished frame.
   local function refreshBase()
-    if K.getFocus() then
+    local pid = K.getFocus()
+    if pid then
       if K.overlay then
-        K.setOverlay(false)
-        K.setOverlay(true)
+        local snap = G.snapshot(K.snapshot(pid))
+        if snap then
+          snap:present(1, 2, nil, nil, 2)
+        else
+          native.fill(1, 2, W, H, colors.black)
+        end
       else
         K.redrawFocused()
       end
@@ -841,6 +855,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
         menu.spr = G.sprite(ow, oh)
       end
       local spr = menu.spr
+      spr.insetBottom = true  -- left wall: all corners stay square
       -- The menu hangs from the Apps tab, so its top left corner stays square.
       spr:panel(C.panel, C.line, function(cv)
         if cv then cv[1][1] = C.line end
@@ -1097,6 +1112,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     if tk.count > 1 then head = head .. " x" .. tk.count end
     local spr = G.sprite(TWo, THo)
     spr.sharpRight = (S.toastSide ~= "left") -- square on the side that meets the wall
+    spr.insetBottom = (S.toastSide == "left")
     spr:panel(C.panel, accent)
     spr:text(2, 2, " " .. pad(head, TW - 1), C.text, titleBg)
     local body = n.text
@@ -1517,6 +1533,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     put(mx, H, msg, lock.msg ~= "" and C.warn or C.dim, C.bg)
     native.setCursorPos(fx + 1 + #shown, H - 1)
     native.setTextColor(C.barText)
+    native.syncCursor()
     native.setCursorBlink(not lock.busy)
   end
 
@@ -1978,7 +1995,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     return lockable() and al > 0 and os.clock() - lastInput > al * 60
   end
 
-  hooks.onTick = function()
+  local function tickBody()
     if saver then
       if K.permQueue[1] then
         saverWake()
@@ -1995,6 +2012,16 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
     end
     baseTick()
     if not (lock and lock.on) and K.permQueue[1] then drawPerm() end
+  end
+
+  -- One frame per event: everything the UI drew goes out together.
+  hooks.onTick = function()
+    tickBody()
+    if not menu and not saver and not toast and not K.overlay and not (lock and lock.on) and not K.permQueue[1]
+      and K.getFocus() and not crashedFocus() then
+      K.restoreCursor()   -- the app's caret
+    end
+    native.syncCursor()
   end
 
   return {

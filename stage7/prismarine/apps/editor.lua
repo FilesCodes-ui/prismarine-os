@@ -478,6 +478,8 @@ local function pad(s, n)
   return s .. string.rep(" ", n - #s)
 end
 
+local kit = dofile("/prismarine/ui/kit.lua")
+
 local MENU = {
   { "^S Save", "save" }, { "^O Open", "open" }, { "^N New", "new" },
   { "^F Find", "find" }, { "^G Go", "go" }, { "^Q Quit", "quit" },
@@ -489,15 +491,8 @@ local function draw()
   local gw = gutterW()
   local tw = W - gw
   -- Top bar
-  term.setCursorPos(1, 1)
-  term.setBackgroundColor(colors.gray)
-  term.setTextColor(colors.white)
-  term.write(string.rep(" ", W))
-  put(2, 1, "Editor", colors.cyan, colors.gray)
-  local title = nameOf() .. (modified and " *" or "")
-  put(10, 1, pad(title, W - 20), modified and colors.orange or colors.white, colors.gray)
   local ln = LANGNAME[lang]
-  put(W - #ln, 1, ln, colors.lightGray, colors.gray)
+  kit.header("Editor", nameOf() .. (modified and " *" or ""), ln)
 
   -- Text
   local sx, sy, ex, ey = selRange()
@@ -513,8 +508,13 @@ local function draw()
     local row = r + 1
     term.setCursorPos(1, row)
     if y <= #lines then
-      term.setBackgroundColor(colors.gray)
-      term.setTextColor(y == errLine and colors.red or (y == cy and colors.white or colors.lightGray))
+      if y == cy then
+        term.setBackgroundColor(kit.c("sel"))
+        term.setTextColor(kit.c("selText"))
+      else
+        term.setBackgroundColor(kit.c("bar"))
+        term.setTextColor(y == errLine and colors.red or kit.c("hint"))
+      end
       term.write(("%" .. (gw - 1) .. "d "):format(y))
       local line = lines[y]
       local cols = lang == "text" and EMPTY or colorsFor(y)
@@ -548,14 +548,14 @@ local function draw()
   end
 
   -- Status line
-  term.setCursorPos(1, H - 1)
-  term.setBackgroundColor(colors.black)
-  term.write(string.rep(" ", W))
+  put(1, H - 1, string.rep(" ", W), kit.c("barText"), kit.c("bg"))
   if flash and os.clock() - flashAt < 6 then
-    put(2, H - 1, pad(flash, W - 2), flashColor)
+    put(2, H - 1, pad(flash, W - 2), flashColor, kit.c("bg"))
   else
-    put(2, H - 1, ("Line %d of %d   Column %d"):format(cy, #lines, cx), colors.lightGray)
-    put(W - 6, H - 1, "F1 help", colors.gray)
+    local pos = (" Ln %d/%d  Col %d "):format(cy, #lines, cx)
+    put(2, H - 1, pos, kit.c("barText"), kit.c("bar"))
+    put(3 + #pos, H - 1, (" " .. LANGNAME[lang] .. " "), kit.c("barText"), kit.c("barBtn"))
+    if W >= 36 then put(W - 8, H - 1, " F1 help ", kit.c("line"), kit.c("bar")) end
   end
 
   -- Menu bar
@@ -665,7 +665,7 @@ local function help()
       put(18, 2 + i, h[2], colors.white)
     end
   end
-  put(2, H, "Press any key to go back", colors.gray)
+  put(2, H, "Press any key to go back", colors.lightGray)
   while true do
     local e = os.pullEvent()
     if e == "key" or e == "mouse_click" then break end
@@ -823,7 +823,7 @@ local function browse(start)
     if #items == 0 then put(2, 3, "This folder is empty.", colors.gray) end
     if fs.isReadOnly("/" .. dir) then put(2, H - 2, "Read only place. You can open files, not save.", colors.orange) end
     put(1, H - 1, pad(" Enter: open   N: new file   M: new folder", W), colors.cyan)
-    put(1, H, pad(" Esc: cancel", W), colors.gray)
+    put(1, H, pad(" Esc: cancel", W), colors.lightGray)
     local ev = { os.pullEvent() }
     local it = items[sel2]
     if ev[1] == "key" then

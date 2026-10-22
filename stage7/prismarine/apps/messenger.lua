@@ -20,7 +20,7 @@ if not net then
   return
 end
 
-local LW = 17
+local LW = 16
 local sel = 1           -- selected row in the people list
 local mode = "chat"     -- chat, find, file
 local input = ""
@@ -74,159 +74,215 @@ end
 
 local function hit(x1, y1, x2, y2, fn) hits[#hits + 1] = { x1, y1, x2, y2, fn } end
 
-local function put(x, y, s, fg, bg)
-  term.setCursorPos(x, y)
-  term.setTextColor(fg or colors.white)
-  term.setBackgroundColor(bg or colors.black)
-  term.write(s)
+local kit = dofile("/prismarine/ui/kit.lua")
+local S
+
+-- A line of text, queued on the scene. Drawn after the cards.
+local function put(x, y, str, fg, bg)
+  S:text(x, y, str, fg, bg or kit.c("bg"))
 end
 
 local function drawPeople(list)
-  for y = 1, H do put(1, y, string.rep(" ", LW), colors.white, colors.gray) end
-  put(1, 1, fit(" People", LW), colors.white, colors.blue)
+  local gray = kit.c("bar")
+  S:card(2, 2, LW - 1, H - 2, gray)
+  put(3, 2, "People", kit.c("barText"), gray)
+  S:rule(3, 3, LW - 3, kit.c("hdr"))
   for i, r in ipairs(list) do
-    local y = 1 + i
-    if y >= H - 1 then break end
+    local y = 3 + i
+    if y >= H - 3 then break end
     local on = (i == sel and mode == "chat")
-    local label = r.name .. ((r.unread or 0) > 0 and (" " .. r.unread) or "")
-    put(1, y, " " .. fit(label, LW - 1), on and colors.white or colors.lightGray, on and colors.cyan or colors.gray)
-    hit(1, y, LW, y, function() sel = i mode = "chat" scroll = 0 end)
+    local badge = ((r.unread or 0) > 0) and tostring(r.unread) or ""
+    S:row(3, y, LW - 3, r.name, on, { right = badge ~= "" and badge or nil, rightFg = kit.c("warn") })
+    hit(3, y, LW - 1, y, function() sel = i mode = "chat" scroll = 0 end)
   end
-  put(1, H - 1, fit(" [F10] Find people", LW), colors.cyan, colors.gray)
-  hit(1, H - 1, LW, H - 1, openFind)
-  put(1, H, fit(" [F3] Send file", LW), colors.cyan, colors.gray)
-  hit(1, H, LW, H, function() mode = "file" fileInput = "" end)
+  local y1, y2 = H - 2, H - 1
+  S:text(3, y1, "F10", kit.c("line"), gray)
+  S:text(7, y1, "Find", kit.c("hint"), gray)
+  S:text(3, y2, "F3", kit.c("line"), gray)
+  S:text(7, y2, "Send file", kit.c("hint"), gray)
+  hit(2, y1, LW, y1, openFind)
+  hit(2, y2, LW, y2, function() mode = "file" fileInput = "" end)
 end
 
 local function drawChat(list)
   local r = list[sel] or list[1]
-  local cw = W - LW - 1
-  put(LW + 1, 1, fit(" " .. (r.name == "Everyone" and "Everyone (signed, not secret)" or r.name .. "  " .. (r.fp or "")), W - LW), colors.white, colors.blue)
-  local lines = {}
+  local cx = LW + 2
+  local cw = W - cx
+  local gray = kit.c("bar")
+  local x = S:pill(cx, 1, r.name, kit.c("barBtn"), kit.c("barText"))
+  local sub = (r.name == "Everyone") and "signed, not secret" or ("key " .. (r.fp or ""))
+  if LW == 0 then sub = sel .. "/" .. #list .. " Up/Down" end
+  put(x + 1, 1, kit.fit(sub, W - x - 2), kit.c("hint"))
+  -- messages as bubbles
+  local maxw = math.max(8, math.floor(cw * 0.7))
+  local msgs = {}
   for _, m in ipairs(net.history(r.key)) do
     local who = m.mine and "You" or m.who
-    for i, l in ipairs(wrap(m.text, cw - #who - 2)) do
-      lines[#lines + 1] = { who = (i == 1) and who or "", text = l, mine = m.mine }
-    end
+    local lines = wrap(m.text, maxw - 2)
+    local w = #who
+    for _, l in ipairs(lines) do if #l > w then w = #l end end
+    msgs[#msgs + 1] = { who = who, lines = lines, mine = m.mine, w = w + 2, h = #lines + 1 }
   end
-  local area = H - 3
-  local maxScroll = math.max(0, #lines - area)
+  local top, bottom = 3, H - 4
+  local area = bottom - top + 1
+  -- stack from the bottom; scroll counts in messages
+  local total = 0
+  for _, m in ipairs(msgs) do total = total + m.h + 1 end
+  local maxScroll = math.max(0, #msgs - 1)
   if scroll > maxScroll then scroll = maxScroll end
-  local first = math.max(1, #lines - area + 1 - scroll)
-  for i = 0, area - 1 do
-    local l = lines[first + i]
-    local y = 2 + i
-    put(LW + 1, y, string.rep(" ", W - LW), colors.white, colors.black)
-    if l then
-      if l.who ~= "" then put(LW + 2, y, l.who .. ":", l.mine and colors.lightBlue or colors.lime) end
-      put(LW + 2 + math.max(#l.who + 1, 0) + 1, y, l.text, colors.white)
+  local y = bottom + 1
+  local drawn = {}
+  for i = #msgs - scroll, 1, -1 do
+    local m = msgs[i]
+    y = y - m.h
+    if y < top then break end
+    drawn[#drawn + 1] = { m = m, y = y }
+    y = y - 1
+  end
+  for _, d in ipairs(drawn) do
+    local m, yy = d.m, d.y
+    local bx = m.mine and (W - 1 - m.w) or cx
+    local fill = m.mine and kit.c("barBtn") or gray
+    S:card(bx, yy, m.w, m.h, fill)
+    put(bx + 1, yy, m.who, m.mine and kit.c("info") or kit.c("ok"), fill)
+    for k, l in ipairs(m.lines) do
+      put(bx + 1, yy + k, l, kit.c("barText"), fill)
     end
   end
-  put(LW + 1, H - 1, string.rep("-", W - LW), colors.gray, colors.black)
+  if #msgs == 0 then
+    S:card(cx + 2, 5, cw - 4, 4, gray)
+    put(cx + 4, 6, "No messages yet", kit.c("barText"), gray)
+    put(cx + 4, 7, "Type below and press Enter.", kit.c("hint"), gray)
+  end
+  -- input
   local shown = input
-  if #shown > cw - 2 then shown = shown:sub(-(cw - 2)) end
-  put(LW + 1, H, fit("> " .. shown, W - LW), colors.white, colors.black)
-  term.setCursorPos(LW + 3 + #shown, H)
-  term.setCursorBlink(true)
+  if #shown > cw - 5 then shown = shown:sub(-(cw - 5)) end
+  S:card(cx, H - 2, cw, 1, kit.c("bar"))
+  put(cx + 1, H - 2, ">", kit.c("line"), kit.c("bar"))
+  if input == "" then
+    put(cx + 3, H - 2, "Type a message", kit.c("hint"), kit.c("bar"))
+  else
+    put(cx + 3, H - 2, shown .. "_", kit.c("barText"), kit.c("bar"))
+  end
   if flash and os.clock() - flashAt < 4 then
-    put(LW + 1, H - 1, fit(" " .. flash, W - LW), colors.orange, colors.black)
+    S:status(H - 1, flash, "warn")
   end
   local offers = net.offers()
   if #offers > 0 then
     local o = offers[1]
-    put(LW + 1, 2, fit(" " .. o.who .. " sends " .. o.name .. " (" .. o.size .. " B)  [Y]es [N]o", W - LW), colors.black, colors.yellow)
+    S:card(cx, 2, cw, 1, kit.c("warn"))
+    put(cx + 1, 2, kit.fit(o.who .. " sends " .. o.name .. " (" .. o.size .. " B)  Y yes  N no", cw - 2), colors.black, kit.c("warn"))
   end
   if transfer then
     local pct = math.floor((transfer.frac or 0) * 100)
-    put(LW + 1, 3, fit(" " .. transfer.name .. " " .. transfer.state .. " " .. pct .. "%", W - LW), colors.black, colors.lime)
+    S:meter(cx, 2, cw, transfer.frac or 0, kit.c("ok"), kit.c("bar"))
+    put(cx, 3, kit.fit(transfer.name .. " " .. transfer.state .. " " .. pct .. "%", cw), kit.c("hint"))
   end
+  S.cursor = { cx + 3 + #shown, H - 2 }
+end
+
+local function boxLine(y, text, fg, gray)
+  put(LW + 4, y, kit.fit(text, W - LW - 6), fg, gray)
 end
 
 local function drawFind()
-  put(LW + 1, 1, fit(" Find people", W - LW), colors.white, colors.blue)
-  for y = 2, H do put(LW + 1, y, string.rep(" ", W - LW), colors.white, colors.black) end
+  local cx = LW + 2
+  local gray = kit.c("bar")
+  S:pill(cx, 1, "Find people", kit.c("barBtn"), kit.c("barText"))
+  S:card(cx, 3, W - cx, H - 4, gray)
   local st = net.status()
   if st.enrolled then
-    put(LW + 2, 3, "This computer belongs to an Archive.", colors.lightGray)
-    put(LW + 2, 4, "The Archive adds your contacts.", colors.lightGray)
-    put(LW + 2, 6, "[Back]", colors.cyan)
-    hit(LW + 2, 6, LW + 7, 6, function() mode = "chat" end)
+    boxLine(4, "This computer belongs to an Archive.", kit.c("barText"), gray)
+    boxLine(5, "The Archive adds your contacts.", kit.c("hint"), gray)
+    S:pill(LW + 4, 7, "Back", kit.c("hdr"), kit.c("barText"))
+    hit(LW + 4, 7, LW + 11, 7, function() mode = "chat" end)
     return
   end
   if not st.modem then
-    put(LW + 2, 3, "No modem found.", colors.orange)
-    put(LW + 2, 5, "Put a modem next to this", colors.lightGray)
-    put(LW + 2, 6, "computer and right click it", colors.lightGray)
-    put(LW + 2, 7, "to turn it on. Both computers", colors.lightGray)
-    put(LW + 2, 8, "need a modem to see each other.", colors.lightGray)
-    put(LW + 2, H, "[Esc] Back", colors.cyan)
+    boxLine(4, "No modem found.", kit.c("warn"), gray)
+    boxLine(6, "Put a modem next to this", kit.c("hint"), gray)
+    boxLine(7, "computer and right click it", kit.c("hint"), gray)
+    boxLine(8, "to turn it on. Both computers", kit.c("hint"), gray)
+    boxLine(9, "need a modem to see each other.", kit.c("hint"), gray)
+    S:hints(H - 1, { { "Esc", "back" } }, 1, LW + 2)
     return
   end
-  local y = 2
+  local y = 4
   local reqs = net.pairRequests()
   for _, r in ipairs(reqs) do
-    if y > H - 2 then break end
+    if y > H - 5 then break end
+    local function yesno(id, yes, no)
+      S:text(LW + 4, y + 2, "Same code on their screen?", kit.c("barText"), gray)
+      local x1 = S:pill(LW + 4, y + 3, "Yes", kit.c("ok"), colors.black)
+      S:pill(x1, y + 3, "No", kit.c("err"), kit.c("barText"))
+      hit(LW + 4, y + 3, LW + 8, y + 3, yes)
+      hit(x1, y + 3, x1 + 4, y + 3, no)
+    end
     if r.dir == "in" then
-      put(LW + 2, y, fit(r.name .. " wants to pair. Code " .. r.code, W - LW - 2), colors.yellow)
-      put(LW + 2, y + 1, "Same code on their screen? [Yes] [No]", colors.white)
+      boxLine(y, r.name .. " wants to pair", kit.c("warn"), gray)
+      boxLine(y + 1, "Code " .. r.code, kit.c("warn"), gray)
       local id = r.id
-      hit(LW + 2 + 29, y + 1, LW + 2 + 33, y + 1, function() net.acceptPair(id, true) note("Paired.") end)
-      hit(LW + 2 + 35, y + 1, LW + 2 + 38, y + 1, function() net.acceptPair(id, false) end)
-      y = y + 3
+      yesno(id, function() net.acceptPair(id, true) note("Paired.") end, function() net.acceptPair(id, false) end)
+      y = y + 5
     elseif r.answered and r.code then
-      put(LW + 2, y, fit("Pair with " .. r.name .. ". Code " .. r.code, W - LW - 2), colors.yellow)
-      put(LW + 2, y + 1, "Same code on their screen? [Yes] [No]", colors.white)
+      boxLine(y, "Pair with " .. r.name, kit.c("warn"), gray)
+      boxLine(y + 1, "Code " .. r.code, kit.c("warn"), gray)
       local id = r.id
-      hit(LW + 2 + 29, y + 1, LW + 2 + 33, y + 1, function() net.confirmPair(id, true) note("Paired.") end)
-      hit(LW + 2 + 35, y + 1, LW + 2 + 38, y + 1, function() net.confirmPair(id, false) end)
-      y = y + 3
+      yesno(id, function() net.confirmPair(id, true) note("Paired.") end, function() net.confirmPair(id, false) end)
+      y = y + 5
     else
-      put(LW + 2, y, fit("Waiting for " .. r.name .. "...", W - LW - 2), colors.lightGray)
+      boxLine(y, "Waiting for " .. r.name .. "...", kit.c("hint"), gray)
       y = y + 1
     end
   end
-  put(LW + 2, y, "Nearby. Click one to pair:", colors.lightGray)
+  boxLine(y, "Nearby. Click one to pair:", kit.c("hint"), gray)
   y = y + 1
   local peers = net.peers()
-  if #peers == 0 then put(LW + 2, y, "Looking... nobody found yet.", colors.gray) end
+  if #peers == 0 then boxLine(y, "Looking... nobody found yet.", kit.c("hint"), gray) end
   for i, p in ipairs(peers) do
-    if y > H - 2 then break end
-    put(LW + 2, y, fit("#" .. p.id .. "  " .. p.name, W - LW - 4), (i == findSel) and colors.black or colors.white, (i == findSel) and colors.cyan or colors.black)
+    if y > H - 4 then break end
+    S:row(LW + 4, y, W - LW - 7, "#" .. p.id .. "  " .. p.name, i == findSel)
     local id = p.id
-    hit(LW + 2, y, W, y, function() findSel = i net.pair(id) note("Request sent. Compare the codes.") end)
+    hit(LW + 4, y, W - 3, y, function() findSel = i net.pair(id) note("Request sent. Compare the codes.") end)
     y = y + 1
   end
-  put(LW + 2, H - 1, "It scans on its own.", colors.gray)
-  put(LW + 2, H, "[S] Scan now   [Esc] Back", colors.cyan)
+  S:hints(H - 1, { { "S", "scan now" }, { "Esc", "back" } }, 1, LW + 2)
 end
 
 local function drawFile(list)
-  put(LW + 1, 1, fit(" Send a file", W - LW), colors.white, colors.blue)
-  for y = 2, H do put(LW + 1, y, string.rep(" ", W - LW), colors.white, colors.black) end
+  local cx = LW + 2
+  local gray = kit.c("bar")
+  S:pill(cx, 1, "Send a file", kit.c("barBtn"), kit.c("barText"))
+  S:card(cx, 3, W - cx, H - 4, gray)
   local r = list[sel]
   if not r or r.key == "all" then
-    put(LW + 2, 3, "Pick a person first.", colors.orange)
-    put(LW + 2, 5, "[Esc] Back", colors.cyan)
+    boxLine(4, "Pick a person first.", kit.c("warn"), gray)
+    S:hints(H - 1, { { "Esc", "back" } }, 1, LW + 2)
     return
   end
-  put(LW + 2, 3, "To: " .. r.name, colors.white)
-  put(LW + 2, 5, "File path (up to 1 MB):", colors.lightGray)
-  put(LW + 2, 6, fit("> " .. fileInput, W - LW - 3), colors.white, colors.gray)
-  term.setCursorPos(LW + 4 + #fileInput, 6)
-  term.setCursorBlink(true)
-  put(LW + 2, 8, "Enter: send   Esc: cancel", colors.cyan)
+  boxLine(4, "To: " .. r.name, kit.c("barText"), gray)
+  boxLine(6, "File path (up to 1 MB):", kit.c("hint"), gray)
+  S:field(LW + 4, 7, W - LW - 7, fileInput, true, false)
+  S.cursor = { math.min(W - 2, LW + 5 + #fileInput), 7 }
+  S:hints(H - 1, { { "Enter", "send" }, { "Esc", "cancel" } }, 1, LW + 2)
 end
 
 local function draw()
+  W, H = term.getSize()
   hits = {}
-  term.setBackgroundColor(colors.black)
   local list = rows()
   if sel > #list then sel = #list end
-  drawPeople(list)
-  term.setCursorBlink(false)
+  LW = (W < 40) and 0 or 16
+  S = kit.scene()
+  if LW > 0 then drawPeople(list) end
   if mode == "find" then drawFind()
   elseif mode == "file" then drawFile(list)
   else drawChat(list) end
+  S:flush()
+  if S.cursor then
+    term.setCursorPos(S.cursor[1], S.cursor[2])
+  end
+  term.setCursorBlink(false)
 end
 
 local function sendInput()
@@ -267,9 +323,20 @@ end
 
 local timer = os.startTimer(0.3)
 draw()
+local lastSig = ""
+local function signature()
+  local list = rows()
+  local r = list[sel] or list[1]
+  local n = 0
+  for _, c in ipairs(list) do n = n + (c.unread or 0) end
+  return table.concat({ tostring(#net.history(r.key)), tostring(n), tostring(#list), tostring(#net.offers()),
+    tostring(#net.peers()), tostring(#net.pairRequests()), tostring(transfer and transfer.frac),
+    (flash and os.clock() - flashAt < 4) and flash or "", mode }, "|")
+end
 while true do
   local ev = { os.pullEvent() }
   local e = ev[1]
+  local skip = false
   if e == "key" then
     local k = ev[2]
     if mode == "chat" then
@@ -335,6 +402,9 @@ while true do
     local list = rows()
     local r = list[sel]
     if mode == "chat" and r then net.markRead(r.key) end
+    local sig = signature()
+    if sig == lastSig then skip = true end
+    lastSig = sig
   end
-  draw()
+  if not skip then draw() end
 end

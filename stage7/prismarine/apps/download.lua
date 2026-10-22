@@ -66,79 +66,103 @@ local function explain(why)
   return "Download failed: " .. (why ~= "" and why or "no reason")
 end
 
-local function tabs()
-  put(1, 1, pad(" Download", W), colors.white, colors.gray)
-  if store then
-    put(14, 1, " Official ", tab == 1 and colors.black or colors.white, tab == 1 and colors.cyan or colors.gray)
-    hits[#hits + 1] = { 14, 1, 23, 1, function() tab = 1 end }
+local kit = dofile("/prismarine/ui/kit.lua")
+
+local function head(s)
+  s:header("Download", nil, nil)
+  local x = (W < 40) and 13 or 14
+  local function tabBtn(label, which)
+    local on = (tab == which)
+    local x0 = x
+    x = s:pill(x, 1, label, on and kit.c("sel") or kit.c("bar"), on and kit.c("selText") or kit.c("hint"))
+    hits[#hits + 1] = { x0, 1, x - 2, 1, function() tab = which end }
   end
-  put(25, 1, " Custom link ", tab == 2 and colors.black or colors.white, tab == 2 and colors.cyan or colors.gray)
-  hits[#hits + 1] = { 25, 1, 37, 1, function() tab = 2 end }
+  if store then tabBtn("Official", 1) end
+  tabBtn(W < 40 and "Link" or "Custom link", 2)
 end
 
-local function drawOfficial(st)
-  local area = H - 5
+local function drawOfficial(s, st)
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  local ch = H - 6
+  local area = ch - 2
   if sel > #st.entries then sel = #st.entries end
   if sel < 1 then sel = 1 end
   if sel - 1 < top then top = sel - 1 end
   if sel > top + area then top = sel - area end
+  if top < 0 then top = 0 end
+  s:card(2, 3, W - 2, ch, gray)
+  local nameW = math.min(14, math.floor(W / 4))
   for i = 1, area do
     local e = st.entries[top + i]
     if e then
-      local on = (top + i == sel)
-      local bg = on and colors.cyan or colors.black
-      put(1, 2 + i, pad(" " .. e.name, 13), on and colors.black or colors.white, bg)
-      put(14, 2 + i, pad(e.about, W - 32), on and colors.black or colors.lightGray, bg)
-      put(W - 18, 2 + i, pad(sizeText(e.size), 8), on and colors.black or colors.gray, bg)
-      local label, fg = "[ Get ]", colors.lime
-      if e.status == "installed" then label, fg = "Installed", colors.gray
-      elseif e.status == "update" then label, fg = "[Update]", colors.yellow end
-      if st.busy == e.name then label, fg = "Working..", colors.yellow end
-      put(W - 9, 2 + i, pad(label, 9), on and colors.black or fg, bg)
       local idx = top + i
-      hits[#hits + 1] = { 1, 2 + i, W, 2 + i, function() sel = idx end }
-      hits[#hits + 1] = { W - 10, 2 + i, W, 2 + i, function() sel = idx; store.install(e.name) end }
+      local on = (idx == sel)
+      local y = 3 + i
+      if on then s:card(3, y, W - 4, 1, kit.c("sel")) end
+      local bg = on and kit.c("sel") or gray
+      local fg = on and kit.c("selText") or text
+      local label, kind = "Get", "ok"
+      if e.status == "installed" then label, kind = "Installed", "dim"
+      elseif e.status == "update" then label, kind = "Update", "warn" end
+      if st.busy == e.name then label, kind = "Working", "warn" end
+      s:text(4, y, kit.fit(e.name, nameW), fg, bg)
+      s:text(4 + nameW + 1, y, kit.fit(e.about, math.max(0, W - 8 - nameW - 1 - #label - 3)), on and kit.c("selText") or hint, bg)
+      local bx = W - #label - 5
+      if on then
+        s:text(bx + 1, y, label, kit.c("selText"), bg)
+      else
+        s:badge(bx, y, label, kind)
+      end
+      hits[#hits + 1] = { 3, y, W - 3, y, function() sel = idx end }
+      hits[#hits + 1] = { bx, y, W - 3, y, function() sel = idx; store.install(e.name) end }
     end
   end
+  s:scroll(W - 1, 4, area, #st.entries, top, area)
   if #st.entries == 0 then
-    put(2, 4, st.state == "loading" and "Loading the list..." or "Nothing to show.", colors.gray)
+    if st.state == "loading" then
+      s:empty(2, 3, W - 2, ch, { "Loading the list...", "One moment." })
+    else
+      s:empty(2, 3, W - 2, ch, { "Nothing to show", "Press R to try again." })
+    end
   end
   local line = st.text
   if flash and os.clock() - flashAt < 3 then line = flash end
-  local fg = colors.lightGray
-  if st.state == "error" then fg = colors.orange end
-  if st.signed == "ok" and st.state == "ready" and (line or "") == "" then line, fg = "Signed list. Every file is hash checked.", colors.lime end
-  if st.signed == "none" and st.state == "ready" and (line or "") == "" then line, fg = "This list is not signed. Files are still hash checked.", colors.yellow end
-  put(2, H - 2, pad(line or "", W - 2), fg)
-  put(2, H - 1, pad("Enter: get   R: reload   Tab: custom link   Esc: quit", W - 2), colors.cyan)
+  local level = nil
+  if st.state == "error" then level = "warn" end
+  if st.signed == "ok" and st.state == "ready" and (line or "") == "" then line, level = "Signed list. Every file is hash checked.", "ok" end
+  if st.signed == "none" and st.state == "ready" and (line or "") == "" then line, level = "This list is not signed. Files are still hash checked.", "warn" end
   if st.state == "installing" and st.frac then
-    local n = math.floor((W - 4) * st.frac)
-    put(2, H - 3, string.rep(" ", n), colors.black, colors.lime)
+    s:meter(2, H - 3, W - 2, st.frac, kit.c("ok"), kit.c("bar"))
   end
+  if (line or "") ~= "" then s:status(H - 2, line, level) end
+  s:hints(H - 1, { { "Enter", "get" }, { "R", "reload" }, { "Tab", "custom link" }, { "Esc", "quit" } })
 end
 
-local function drawCustom()
-  put(2, 3, "Web address (https only):", colors.lightGray)
-  put(2, 4, pad(" " .. url, W - 2), colors.white, field == 1 and colors.blue or colors.gray)
-  put(2, 6, "Save as (in /downloads):", colors.lightGray)
-  put(2, 7, pad(" " .. name, W - 2), colors.white, field == 2 and colors.blue or colors.gray)
-  put(2, 9, status[1]:sub(1, W - 2), status[2])
-  put(2, 10, ("Limit " .. sizeText(LIMIT) .. ". Free: " .. sizeText(fs.getFreeSpace("/"))), colors.gray)
-  put(2, H, store and "Tab: official list   Enter: download   Esc: quit" or "Tab: switch field   Enter: download   Esc: quit", colors.cyan)
-  if field == 1 then term.setCursorPos(math.min(W - 1, 3 + #url), 4) else term.setCursorPos(math.min(W - 1, 3 + #name), 7) end
-  term.setCursorBlink(true)
+local function drawCustom(s)
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  s:card(2, 3, W - 2, 10, gray)
+  s:text(4, 4, "Web address (https only)", hint, gray)
+  s:field(4, 5, W - 6, url, field == 1, false, "https://")
+  s:text(4, 7, "Save as (in /downloads)", hint, gray)
+  s:field(4, 8, W - 6, name, field == 2, false, "file name")
+  local sc = status[2]
+  local lvl = (sc == colors.orange or sc == colors.yellow) and "warn" or ((sc == colors.lime) and "ok" or nil)
+  local col = (lvl == "warn" and kit.c("warn")) or (lvl == "ok" and kit.c("ok")) or kit.c("info")
+  s:text(4, 10, kit.fit(status[1], W - 6), col, gray)
+  s:text(4, 12, "Limit " .. sizeText(LIMIT) .. "    Free " .. sizeText(fs.getFreeSpace("/")), hint, gray)
+  s:hints(H - 1, store and { { "Tab", "official list" }, { "Enter", "download" }, { "Esc", "quit" } }
+    or { { "Tab", "switch field" }, { "Enter", "download" }, { "Esc", "quit" } })
 end
 
--- Ask the OS for the list before clearing. A call into the OS pauses this app,
--- and a cleared screen shown during that pause is the flicker.
+-- Ask the OS for the list before drawing. A call into the OS pauses this app.
 local function draw()
+  W, H = term.getSize()
   hits = {}
   local st = (tab == 1 and store) and store.status() or nil
-  term.setBackgroundColor(colors.black)
-  term.clear()
-  term.setCursorBlink(false)
-  tabs()
-  if st then drawOfficial(st) else drawCustom() end
+  local s = kit.scene()
+  head(s)
+  if st then drawOfficial(s, st) else drawCustom(s) end
+  s:flush()
 end
 
 local function fetch()

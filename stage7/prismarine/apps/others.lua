@@ -55,85 +55,102 @@ local GUIDE = {
   { "Computers you already have get the new limit.", colors.lightGray },
 }
 
+local kit = dofile("/prismarine/ui/kit.lua")
 local function draw()
+  W, H = term.getSize()
   if page == 2 or page == 4 then refreshPw() end
-  term.setBackgroundColor(colors.black)
-  term.clear()
-  term.setCursorBlink(false)
-  local x = 1
-  put(1, 1, string.rep(" ", W), colors.white, colors.gray)
-  for i, t in ipairs(PAGES) do
-    local on = i == page
-    put(x, 1, " " .. t .. " ", on and colors.white or colors.lightGray, on and colors.blue or colors.gray)
-    x = x + #t + 3
+  local s = kit.scene()
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  if W < 40 then
+    local x = s:pill(2, 1, PAGES[page], kit.c("sel"), kit.c("selText"))
+    s:text(x, 1, page .. "/" .. #PAGES .. " Left/Right", hint, kit.c("bg"))
+  else
+    s:tabs(2, 1, PAGES, page)
+  end
+  local ch = H - 4
+  local function card(y, h) s:card(2, y, W - 2, h or ch, gray) end
+  local function note(y, msgText, col)
+    s:text(4, y, kit.fit(msgText, W - 6), col or hint, gray)
   end
   if page == 1 then
     local st = net and net.status()
-    put(2, 3, "Prismarine OS " .. tostring(api.version), colors.cyan)
-    put(2, 4, "Computer #" .. os.getComputerID() .. (os.getComputerLabel() and (" (" .. os.getComputerLabel() .. ")") or ""), colors.white)
+    card(3, 9)
+    s:text(4, 4, "Prismarine OS", kit.c("line"), gray)
+    s:text(4 + 14, 4, kit.fit(tostring(api.version), W - 20), text, gray)
+    s:text(4, 5, "Computer #" .. os.getComputerID() .. (os.getComputerLabel() and (" (" .. os.getComputerLabel() .. ")") or ""), hint, gray)
+    s:rule(4, 6, W - 6, kit.c("hdr"))
     if st then
-      put(2, 6, "Name:      " .. tostring(st.name), colors.white)
-      put(2, 7, "Key code:  " .. tostring(st.fp), colors.white)
-      put(2, 8, "Network:   " .. (st.isArchive and "This is an Archive" or st.enrolled and ("Archive " .. st.archive.name) or "Open (no Archive)"), colors.white)
-      put(2, 9, "Modem:     " .. (st.modem and "found" or "none"), st.modem and colors.lime or colors.orange)
+      s:text(4, 7, "Name", hint, gray)
+      s:text(15, 7, kit.fit(tostring(st.name), W - 17), text, gray)
+      s:text(4, 8, "Key code", hint, gray)
+      s:text(15, 8, kit.fit(tostring(st.fp), W - 17), text, gray)
+      s:text(4, 9, "Network", hint, gray)
+      s:text(15, 9, kit.fit(st.isArchive and "This is an Archive" or st.enrolled and ("Archive " .. st.archive.name) or "Open (no Archive)", W - 17), text, gray)
+      s:text(4, 10, "Modem", hint, gray)
+      s:badge(15, 10, st.modem and "found" or "none", st.modem and "ok" or "warn")
     end
-    put(2, 11, "Security: password keys, signed and encrypted", colors.lightGray)
-    put(2, 12, "messages, system file check at every boot.", colors.lightGray)
-    put(2, 14, "Crypto: ccryptolib (MIT), Miguel Oliveira.", colors.gray)
-    put(2, 15, "Graphics: Pixelbox Lite, 9551-Dev.", colors.gray)
+    s:card(2, 13, W - 2, H - 15, gray)
+    note(14, "Security: password keys, signed and encrypted", text)
+    note(15, "messages, system file check at every boot.", hint)
+    if H >= 19 then
+      note(16, "Crypto: ccryptolib (MIT), Miguel Oliveira.", hint)
+      note(17, "Graphics: Pixelbox Lite, 9551-Dev.", hint)
+    end
   elseif page == 2 then
-    if not account then put(2, 3, "Not available.", colors.orange) else
-      put(2, 3, pwOn and "Change your password" or "Password is off. Turn it on.", colors.white)
+    card(3, ch - 1)
+    if not account then note(4, "Not available.", kit.c("warn")) else
+      note(4, pwOn and "Change your password" or "Password is off. Turn it on.", text)
       local function box(y, label, key)
-        put(2, y, label, colors.lightGray)
-        put(2, y + 1, (" " .. string.rep("*", #fields[key]) .. string.rep(" ", W)):sub(1, 30), colors.white, field == key and colors.blue or colors.gray)
+        s:text(4, y, label, hint, gray)
+        s:field(4, y + 1, 30, fields[key], field == key, true)
       end
-      if pwOn then box(5, "Current password", "old") end
-      box(8, "New password (6+ characters)", "new")
-      box(11, "New password again", "again")
-      put(2, 14, msg, msgColor)
-      put(2, 16, pwOn and "Tab: next   Enter: change   F4: turn off" or "Tab: next field   Enter: turn password on", colors.cyan)
-      if pwOn then put(2, 17, "F4 uses the current password box.", colors.gray) end
-      local y = ({ old = 6, new = 9, again = 12 })[field]
-      term.setCursorPos(3 + #fields[field], y)
-      term.setCursorBlink(true)
+      if pwOn then box(6, "Current password", "old") end
+      box(9, "New password (6+ characters)", "new")
+      box(12, "New password again", "again")
+      s:text(4, 15, kit.fit(msg, W - 6), msgColor == colors.lime and kit.c("ok") or (msgColor == colors.orange and kit.c("warn") or kit.c("info")), gray)
+      s:hintText(H - 1, pwOn and "Tab: next   Enter: change   F4: turn off" or "Tab: next field   Enter: turn password on", 1)
     end
   elseif page == 3 then
-    put(2, 3, "Press keys, click, scroll. Esc leaves this page.", colors.lightGray)
-    for i, l in ipairs(lastEv) do put(2, 4 + i, l:sub(1, W - 2), colors.white) end
+    card(3, ch - 1)
+    note(4, "Press keys, click, scroll. Esc leaves this page.", hint)
+    for i, l in ipairs(lastEv) do s:text(4, 5 + i, kit.fit(l, W - 6), text, gray) end
   elseif page == 5 then
+    card(3, ch)
     for i, l in ipairs(GUIDE) do
-      if 2 + i < H then put(2, 2 + i, l[1], l[2]) end
+      if 3 + i < H - 1 then
+        local col = l[2] == colors.cyan and kit.c("line") or (l[2] == colors.lightGray and hint or text)
+        s:text(4, 3 + i, kit.fit(l[1], W - 6), col, gray)
+      end
     end
   elseif page == 4 then
-    if not update then put(2, 3, "Not available.", colors.orange) else
+    card(3, ch - 1)
+    if not update then note(4, "Not available.", kit.c("warn")) else
       local st = update.status()
-      put(2, 3, "Update", colors.white)
-      put(2, 5, st.text or "", st.state == "error" and colors.orange or (st.state == "available" and colors.yellow or colors.lime))
+      note(4, "Update", text)
+      note(6, st.text or "", st.state == "error" and kit.c("warn") or (st.state == "available" and kit.c("warn") or kit.c("ok")))
       if st.state == "installing" and st.frac then
-        local n = math.floor(30 * st.frac)
-        put(2, 7, "[" .. string.rep("=", n) .. string.rep(" ", 30 - n) .. "]", colors.cyan)
+        s:meter(4, 8, W - 6, st.frac, kit.c("ok"), kit.c("bg"))
       end
       if st.state == "available" then
         if pwOn then
-          put(2, 8, "Password to install:", colors.lightGray)
-          put(2, 9, (" " .. string.rep("*", #fields.upw) .. string.rep(" ", 30)):sub(1, 30), colors.white, colors.blue)
-          term.setCursorPos(3 + #fields.upw, 9)
-          term.setCursorBlink(true)
+          note(9, "Password to install:", hint)
+          s:field(4, 10, 30, fields.upw, true, true)
         else
-          put(2, 8, "No password is set.", colors.lightGray)
+          note(9, "No password is set.", hint)
         end
-        put(2, 11, "Enter: install", colors.cyan)
+        note(12, "Enter: install", kit.c("line"))
       elseif st.state == "done" then
-        put(2, 8, "Press R to reboot now.", colors.cyan)
+        note(9, "Press R to reboot now.", kit.c("line"))
       else
-        put(2, 8, "Press C to check again.", colors.cyan)
+        note(9, "Press C to check again.", kit.c("line"))
       end
-      put(2, 14, "Files are downloaded, checked against their", colors.gray)
-      put(2, 15, "SHA-256, then swapped in. Your password is", colors.gray)
-      put(2, 16, "needed. The boot check is renewed for you.", colors.gray)
+      note(14, "Files are downloaded, checked against their", hint)
+      note(15, "SHA-256, then swapped in. Your password is", hint)
+      note(16, "needed. The boot check is renewed for you.", hint)
     end
   end
+  s:flush()
+  term.setCursorBlink(false)
 end
 
 local function changePassword()
@@ -174,7 +191,8 @@ draw()
 local refresh = os.startTimer(0.5)
 while true do
   local ev = { os.pullEvent() }
-  if ev[1] == "timer" and ev[2] == refresh then refresh = os.startTimer(0.5) end
+  local ticked = (ev[1] == "timer" and ev[2] == refresh)
+  if ticked then refresh = os.startTimer(0.5) end
   local e = ev[1]
   if page == 3 and e ~= "timer" and e ~= "pm_net" then
     local s = e
@@ -215,12 +233,12 @@ while true do
   elseif e == "char" and ev[2] == "q" and page ~= 2 and page ~= 3 and not (page == 4 and update and update.status().state == "available") then
     return
   elseif e == "mouse_click" and ev[4] == 1 then
-    local x = 1
+    local x = 2
     for i, t in ipairs(PAGES) do
       local w = #t + 2
       if ev[3] >= x and ev[3] < x + w then page = i end
       x = x + #t + 3
     end
   end
-  draw()
+  if not (ticked and page ~= 4 and page ~= 2) then draw() end
 end

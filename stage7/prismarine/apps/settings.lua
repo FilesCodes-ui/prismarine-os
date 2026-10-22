@@ -25,6 +25,17 @@ local C = {
   line = colors.gray, hot = colors.cyan, warn = colors.orange,
 }
 
+local kit = dofile("/prismarine/ui/kit.lua")
+-- The look follows the OS theme.
+local function skin()
+  C.bg, C.side, C.sideText = kit.c("bg"), kit.c("bar"), kit.c("hint")
+  C.sel, C.selText = kit.c("sel"), kit.c("selText")
+  C.title, C.hot = kit.c("line"), kit.c("line")
+  C.text, C.dim, C.on, C.off, C.warn = kit.c("text"), kit.c("hint"), kit.c("ok"), kit.c("bar"), kit.c("warn")
+  C.line = kit.c("bar")
+end
+skin()
+
 if not ui then
   term.clear()
   term.setCursorPos(1, 1)
@@ -362,119 +373,108 @@ local function change(r, step)
   end
 end
 
-local SIDE = 13
-
-local function put(x, y, s, fg, bg)
-  term.setCursorPos(x, y)
-  term.setTextColor(fg or C.text)
-  term.setBackgroundColor(bg or C.bg)
-  term.write(s)
-end
-
-local function fill(x, y, w, bg)
-  term.setCursorPos(x, y)
-  term.setBackgroundColor(bg)
-  term.write((" "):rep(w))
-end
+local SIDE = 14
 
 local function draw()
+  W, H = term.getSize()
+  skin()
   local ps = pages()
   local p = ps[page]
   fixRow(p)
+  local gray, text, hint = kit.c("bar"), kit.c("barText"), kit.c("hint")
+  local narrow = W < 40
+  local rx = narrow and 2 or (SIDE + 3)
+  local rw = W - rx
+  local ch = H - 4
   -- keep the selected row on screen
-  local fit = H - 6
+  local fit = ch - 2
   if row < top then top = row end
   while row > 0 and row - top + 1 > fit do top = top + 1 end
   if top < 1 or #p.rows <= fit then top = 1 end
   hits = {}
-  term.setBackgroundColor(C.bg)
-  term.clear()
+  local s = kit.scene()
+  s:header("Settings", p.name .. (narrow and ("  " .. page .. "/" .. #ps .. " Tab") or ""), nil)
   -- sidebar
-  for y = 1, H do fill(1, y, SIDE, C.side) end
-  put(2, 1, "SETTINGS", C.title, C.side)
+  if not narrow then s:card(2, 2, SIDE, ch, gray) end
   for i, pg in ipairs(ps) do
-    local y = 2 + i * (#ps <= 7 and 2 or 1)
+    local y = 2 + i
+    if narrow or y > H - 3 then break end
     local active = i == page
-    fill(1, y, SIDE, active and C.sel or C.side)
-    put(3, y, pg.name, active and C.selText or C.sideText, active and C.sel or C.side)
-    hits[#hits + 1] = { x1 = 1, x2 = SIDE, y = y, page = i }
+    s:row(3, y, SIDE - 2, pg.name, active)
+    hits[#hits + 1] = { x1 = 2, x2 = SIDE + 1, y = y, page = i }
   end
-  put(2, H, "q: quit", C.dim, C.side)
   -- pane
-  local px = SIDE + 2
-  local pw = W - px
-  put(px, 1, p.name, C.title)
-  put(px, 2, ("-"):rep(pw), C.line)
-  if p.intro then put(px, 3, p.intro:sub(1, pw - 1), C.dim) end
-  local y = 4
+  s:card(rx, 2, rw, ch, gray)
+  local px = rx + 2
+  local y = 3
   for i = top, #p.rows do
     local r = p.rows[i]
-    if y > H - 3 then break end
+    if y > H - 4 then break end
     if r.kind == "gap" then
       y = y + 1
     else
       local sel = (i == row)
-      local bg = sel and C.sel or C.bg
-      fill(px - 1, y, pw + 1, bg)
+      local bg = sel and kit.c("sel") or gray
+      local fg = sel and kit.c("selText") or text
+      if sel then s:card(rx + 1, y, rw - 2, 1, bg) end
       if r.kind == "info" then
-        put(px, y, r.label, C.dim, bg)
-        put(px + 14, y, tostring(r.text):sub(1, pw - 14), C.text, bg)
+        s:text(px, y, r.label, hint, gray)
+        s:text(px + 14, y, kit.fit(tostring(r.text), rw - 18), text, gray)
       elseif r.kind == "toggle" then
-        put(px, y, r.label, sel and C.selText or C.text, bg)
-        local pill = r.value and " ON  " or " OFF "
-        put(W - 6, y, pill, r.value and colors.black or colors.lightGray, r.value and C.on or C.off)
-        hits[#hits + 1] = { x1 = px - 1, x2 = W, y = y, row = i }
+        s:text(px, y, kit.fit(r.label, rw - 10), fg, bg)
+        s:switch(rx + rw - 7, y, r.value)
+        hits[#hits + 1] = { x1 = rx, x2 = W, y = y, row = i }
       elseif r.kind == "choice" then
-        put(px, y, r.label, sel and C.selText or C.text, bg)
         local v = (r.fmt and r.fmt(r.value) or tostring(r.value)) .. (r.suffix or "")
+        v = kit.fit(v, narrow and 8 or 14)
         local vw = #v
-        local vx = W - vw - 3
-        put(vx - 1, y, "<", C.hot, bg)
-        put(vx + 1, y, v, C.text, bg)
-        put(vx + vw + 2, y, ">", C.hot, bg)
-        hits[#hits + 1] = { x1 = px - 1, x2 = vx, y = y, row = i, step = -1 }
+        s:text(px, y, kit.fit(r.label, rw - vw - 9), fg, bg)
+        local vx = rx + rw - vw - 5
+        s:text(vx - 1, y, "<", sel and kit.c("selText") or kit.c("line"), bg)
+        s:text(vx + 1, y, v, fg, bg)
+        s:text(vx + vw + 2, y, ">", sel and kit.c("selText") or kit.c("line"), bg)
+        hits[#hits + 1] = { x1 = rx, x2 = vx, y = y, row = i, step = -1 }
         hits[#hits + 1] = { x1 = vx + 1, x2 = W, y = y, row = i, step = 1 }
       elseif r.kind == "text" then
-        put(px, y, r.label, sel and C.selText or C.text, bg)
-        local v = tostring(r.value)
-        put(W - #v - 2, y, v, C.hot, bg)
-        hits[#hits + 1] = { x1 = px - 1, x2 = W, y = y, row = i }
+        local v = kit.fit(tostring(r.value), narrow and 8 or 16)
+        s:text(px, y, kit.fit(r.label, rw - #v - 7), fg, bg)
+        s:text(rx + rw - #v - 3, y, v, sel and kit.c("selText") or kit.c("line"), bg)
+        hits[#hits + 1] = { x1 = rx, x2 = W, y = y, row = i }
       elseif r.kind == "action" then
-        put(px, y, "[ " .. r.label .. " ]", r.danger and C.warn or (sel and C.selText or C.hot), bg)
-        hits[#hits + 1] = { x1 = px - 1, x2 = W, y = y, row = i, act = true }
+        local col = r.danger and kit.c("warn") or (sel and kit.c("selText") or kit.c("line"))
+        s:text(px, y, "> " .. r.label, col, bg)
+        hits[#hits + 1] = { x1 = rx, x2 = W, y = y, row = i, act = true }
       end
       y = y + 1
     end
   end
-  if top > 1 then put(W, 3, "^", C.hot) end
-  if #p.rows - top + 1 > fit then put(W, H - 3, "v", C.hot) end
-  put(px, H - 2, "Arrows: move, change   q: quit", C.dim)
+  s:scroll(W - 1, 3, fit, #p.rows, top - 1, fit)
   -- footer: help for the selected row, or the last confirmation
-  fill(SIDE + 1, H - 1, W - SIDE, C.bg)
-  fill(SIDE + 1, H, W - SIDE, C.bg)
-  local line = nil
   if flash and os.clock() < flashUntil then
-    line = flash
-    put(px, H, line, C.on)
+    s:status(H - 1, flash, "ok")
   else
     local r = p.rows[row]
-    if r and r.help then
-      local t = r.help
-      if #t <= pw then put(px, H, t, C.dim)
+    local t = (r and r.help) or p.intro
+    if t then
+      local w = W - 5
+      if #t <= w then s:text(3, H - 1, t, hint, kit.c("bg"))
       else
-        local cut = t:sub(1, pw):match("^(.*) ") or t:sub(1, pw)
-        put(px, H - 1, cut, C.dim)
-        put(px, H, t:sub(#cut + 2, #cut + 1 + pw), C.dim)
+        local cut = t:sub(1, w):match("^(.*) ") or t:sub(1, w)
+        s:text(3, H - 2, cut, hint, kit.c("bg"))
+        s:text(3, H - 1, kit.fit(t:sub(#cut + 2), w), hint, kit.c("bg"))
       end
     end
   end
+  if editing then
+    local shown = editing.mask and ("*"):rep(#editing.buf) or editing.buf
+    s:card(2, H - 1, W - 2, 1, kit.c("sel"))
+    s:text(3, H - 1, kit.fit(editing.label .. ": " .. shown, W - 5), kit.c("selText"), kit.c("sel"))
+  end
+  s:flush()
   term.setCursorBlink(false)
   if editing then
-    fill(SIDE + 1, H - 1, W - SIDE, C.sel)
     local shown = editing.mask and ("*"):rep(#editing.buf) or editing.buf
-    put(px, H - 1, (editing.label .. ": " .. shown):sub(1, pw - 1), C.selText, C.sel)
-    term.setCursorPos(math.min(W, px + #editing.label + 2 + #shown), H - 1)
-    term.setCursorBlink(true)
+    term.setCursorPos(math.min(W - 1, 3 + #editing.label + 2 + #shown), H - 1)
   end
 end
 

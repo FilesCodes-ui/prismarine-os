@@ -50,6 +50,31 @@ Built-in apps (new in 24.1)
     The password maker uses strong random bytes. F2 inside an item fills the secret.
     A password change re-seals the Vault. With no password set, items are only hidden.
 
+  New look in 24.3
+    Every built-in app now uses pixel cards: rounded panels, key chips, status badges, meters and switches.
+    Programs: list and detail card with hash and Run button.
+    Disks: volume cards with a usage meter.
+    Download: one card list with Get, Update and Installed badges.
+    Vault: list with a preview card. Locked screen and password maker redone.
+    Messenger: chat bubbles, input pill, pairing buttons.
+    Settings: sidebar card, switches, value pickers.
+    Others and Archive: tabs as pills, content on cards.
+    Editor: current line highlight and a status bar with a language chip.
+    Shell: Shell v2 is now the built-in Shell. It runs on a full shell API, with history, aliases,
+    chaining, Tab completion and settings. Its boot screen, self update and palette changes are off.
+    Apps use /prismarine/ui/kit.lua: kit.scene() gives s:card, s:pill, s:badge, s:meter, s:switch,
+    s:row, s:field, s:hints, s:header and s:flush.
+
+Fixes in 24.2
+  New frame buffer: the OS and every app draw into one buffer, and only changed cells reach the screen.
+  No half drawn frames, so menus, drawers and toasts no longer flicker. Redraws send 10 to 30 times less.
+  Menus on the left wall have square corners on every side. Toasts on the left do too.
+  Portals showed a black screen. Device calls that finish on the server thread never returned to the app.
+  The kernel now delivers that answer to the app that waits for it. Portals also draws before it scans.
+  Every built-in app has one look: title chip, key hints that fit, selection marker, scroll bar,
+  empty page text, themed colors. Footers no longer cut off in the middle of a word.
+  New file prismarine/ui/screen.lua (frame buffer) and prismarine/ui/kit.lua (app look).
+
 Fixes in 24.1
   Download app: no flicker and far less lag. The list is checked once, not on every redraw.
   Menu and toast edges no longer show a colored bar in the screen margin.

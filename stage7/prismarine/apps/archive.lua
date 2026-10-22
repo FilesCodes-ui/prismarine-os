@@ -141,7 +141,7 @@ local function build()
   elseif tab == 3 then
     add("Search: " .. q.text .. "_", colors.cyan)
     add("Show: " .. KIND_LABEL[KINDS[q.kind]] .. "   (Tab changes)   Enter: search", colors.lightGray)
-    add(q.info ~= "" and q.info or "Type words. Matches any part of a message.", colors.gray)
+    add(q.info ~= "" and q.info or "Type words. Matches any part of a message.", colors.lightGray)
     if q.results then
       for _, h in ipairs(q.results) do
         local d, r = h.day, h.rec
@@ -186,13 +186,13 @@ local function build()
       for n, m in ipairs(STORAGE) do if m == st.storage then i = n end end
       A.setStorage("storage", STORAGE[i % #STORAGE + 1])
     end)
-    add(STORAGE_HELP[st.storage] or "", colors.gray)
+    add(STORAGE_HELP[st.storage] or "", colors.lightGray)
     add("Keep free: " .. sizeText(st.reserve) .. "   (Enter changes)", colors.white, function()
       local i = 1
       for n, v in ipairs(RESERVES) do if v == st.reserve then i = n end end
       A.setStorage("reserve", RESERVES[i % #RESERVES + 1])
     end)
-    add("Used by overflow mode.", colors.gray)
+    add("Used by overflow mode.", colors.lightGray)
     add("Disks found: " .. #st.disks, colors.white, function() A.refreshDisks() note("Looked again.") end)
     for _, d in ipairs(st.disks) do
       add("  " .. d.mount .. (d.label and (" " .. d.label) or "") .. "  " .. d.free .. " B free", colors.lightGray)
@@ -203,64 +203,75 @@ local function build()
       if n == false then note(tostring(why)) else note("Copied " .. tostring(n) .. " lines." .. (why and (" " .. why) or "")) end
     end)
     add("Printer: " .. (A.hasPrinter() and "found" or "none found"), colors.lightGray)
-    add("Disk files stay encrypted with the Archive key.", colors.gray)
+    add("Disk files stay encrypted with the Archive key.", colors.lightGray)
   elseif tab == 7 then
     local s = A.stats()
     add("Name: " .. tostring(A.name()), colors.white)
     add("Key code: " .. A.fingerprint(), colors.cyan)
     add("Roster version: " .. tostring(s.rosterV), colors.lightGray)
     add("Messages ok " .. s.ok .. "  bad " .. s.bad .. "  dropped " .. s.dropped, colors.lightGray)
-    add("Logs are encrypted on disk with a key only this", colors.gray)
-    add("Archive holds. Print and export ask your password.", colors.gray)
-    add("This computer is in Bunker mode.", colors.gray)
+    add("Logs are encrypted on disk with a key only this", colors.lightGray)
+    add("Archive holds. Print and export ask your password.", colors.lightGray)
+    add("This computer is in Bunker mode.", colors.lightGray)
   end
 end
 
 local hits = {}
 
+local kit = dofile("/prismarine/ui/kit.lua")
 draw = function()
-  term.setBackgroundColor(colors.black)
-  term.clear()
+  W, H = term.getSize()
   hits = {}
-  local x = 1
-  put(1, 1, string.rep(" ", W), colors.white, colors.gray)
+  local sc = kit.scene()
+  local gray = kit.c("bar")
+  local names = {}
+  for i, t in ipairs(TABS) do names[i] = t end
+  local x = 2
   for i, t in ipairs(TABS) do
     local on = (i == tab and not view)
-    local label = " " .. t .. " "
-    put(x, 1, label, on and colors.white or colors.lightGray, on and colors.blue or colors.gray)
-    local x1, x2 = x, x + #label - 1
-    hits[#hits + 1] = { x1, 1, x2, 1, function() tab = i view = nil row, top = 1, 0 end }
-    x = x + #label + 1
+    local x0 = x
+    x = sc:pill(x, 1, t, on and kit.c("sel") or gray, on and kit.c("selText") or kit.c("hint"))
+    hits[#hits + 1] = { x0, 1, x - 2, 1, function() tab = i view = nil row, top = 1, 0 end }
   end
   build()
   if row > #items then row = #items end
   if row < 1 then row = 1 end
-  local area = H - 3
+  local ch = H - 4
+  local area = ch - 2
   if row - 1 < top then top = row - 1 end
   if row > top + area then top = row - area end
+  if top < 0 then top = 0 end
+  sc:card(2, 3, W - 2, ch, gray)
   if view then
     local help = view.review and "Bksp back  A approve  R refuse"
       or ("Bksp back  M mark  P print  E save>" .. (dest == "disk" and "disk" or "pc") .. "  D swap")
-    put(1, 2, (" " .. view.day .. "  " .. help .. string.rep(" ", W)):sub(1, W), colors.black, colors.lightGray)
+    sc:text(2, 2, kit.fit(view.day .. "  " .. help, W - 2), kit.c("hint"), kit.c("bg"))
   end
   for i = 1, area do
     local it = items[top + i]
     if it then
       local on = (top + i == row)
-      local y = 2 + i - (view and 0 or 1)
-      put(1, y, (" " .. it.text .. string.rep(" ", W)):sub(1, W), on and colors.black or it.color, on and colors.cyan or colors.black)
+      local y = 3 + i
+      if on then sc:card(3, y, W - 4, 1, kit.c("sel")) end
+      local fg = on and kit.c("selText") or ((it.color == colors.white and kit.c("barText")) or it.color)
+      if fg == colors.gray then fg = kit.c("hint") end
+      sc:text(4, y, kit.fit(it.text, W - 7), fg, on and kit.c("sel") or gray)
       local idx = top + i
-      hits[#hits + 1] = { 1, y, W, y, function() row = idx if it.act then it.act() end end }
+      hits[#hits + 1] = { 3, y, W - 2, y, function() row = idx if it.act then it.act() end end }
     end
   end
+  sc:scroll(W - 1, 4, area, #items, top, area)
   if prompt then
-    put(1, H, (" " .. prompt.label .. " " .. string.rep("*", #prompt.buf) .. string.rep(" ", W)):sub(1, W - 1), colors.white, colors.blue)
-    term.setCursorPos(math.min(W, 3 + #prompt.label + #prompt.buf), H)
-    term.setCursorBlink(true)
-  else
-    term.setCursorBlink(false)
-    if flash and os.clock() - flashAt < 4 then put(1, H, (" " .. flash .. string.rep(" ", W)):sub(1, W - 1), colors.orange) end
+    sc:card(2, H - 1, W - 2, 1, kit.c("hdr"))
+    sc:text(3, H - 1, kit.fit(prompt.label .. " " .. string.rep("*", #prompt.buf), W - 5), kit.c("barText"), kit.c("hdr"))
+  elseif flash and os.clock() - flashAt < 4 then
+    sc:status(H - 1, flash, "warn")
   end
+  sc:flush()
+  if prompt then
+    term.setCursorPos(math.min(W, 4 + #prompt.label + #prompt.buf), H - 1)
+  end
+  term.setCursorBlink(false)
 end
 
 local WHY = { wrong = "Wrong password.", locked = "Too many tries. Wait." }

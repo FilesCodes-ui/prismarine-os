@@ -640,6 +640,21 @@ function Sprite:panel(fill, line, pre)
       cv[2][1] = line cv[2][pw] = line cv[ph - 1][1] = line cv[ph - 1][pw] = line
       cv[1][2] = line cv[1][pw - 1] = line cv[ph][2] = line cv[ph][pw - 1] = line
     end
+    if self.insetBottom then
+      -- A panel on the left wall. A square corner in the bottom cell row would
+      -- need its lower right sub-pixel to be the border color, and the game
+      -- would paint that color into the margin. So the frame ends one
+      -- sub-pixel early: the last sub-row stays empty and every corner is square.
+      local cut = colors.black
+      for x = 1, pw do cv[ph][x] = cut cv[ph - 1][x] = line end
+      for y = 1, ph - 1 do cv[y][1] = line end
+      cv[ph][1] = cut
+      if G.opts.round then
+        cv[ph - 1][pw] = cut
+        cv[ph - 2][pw] = line
+        cv[ph - 1][pw - 1] = line
+      end
+    end
     if pre then pre(cv, pw, ph) end
     self.box:render()
   else
@@ -732,7 +747,7 @@ end
 -- Copy sprite rows r1..r2 to the real screen at (x, y). Clips to the screen.
 -- Rows that would land above screen row `miny` (default 1) are skipped.
 function Sprite:present(x, y, r1, r2, miny)
-  local nat = term.native()
+  local nat = G.scr or term.native()
   local W, H = nat.getSize()
   r1 = r1 or 1
   r2 = r2 or self.h
@@ -765,7 +780,7 @@ function G.snapshot(snap)
   return setmetatable({ w = snap.w, h = snap.h, rows = snap.rows }, Snap)
 end
 function Snap:present(x, y, r1, r2, miny)
-  local nat = term.native()
+  local nat = G.scr or term.native()
   local W, H = nat.getSize()
   r1 = r1 or 1
   r2 = r2 or self.h
