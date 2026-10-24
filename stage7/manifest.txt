@@ -1,7 +1,7 @@
 {
   version = "24.3-stage7c",
   files = {
-    ["prismarine/apps/disks.lua"] = "2f2e7f9220db00beea2b1294679326d0a6527bb3d6f1d8a370fdcd72034219d3",
+    ["prismarine/apps/disks.lua"] = "33d7432422d6880349c1eb4437cd5c6ec67996aef0f837fd7e27ad29b4363f7a",
     ["prismarine/apps/download.lua"] = "644c99cc43638047f14d79208de32a22e8d6c18563427153c0e68744dc2933a1",
     ["prismarine/apps/editor.lua"] = "98f58c1c0086c71ff6c7d25363cead3d7daba08672b60ffe9d5e0929b8ad284d",
     ["prismarine/apps/messenger.lua"] = "3edf6c968820c9fb284a598ec6f6bac0a22acab3a1bccb9b2210356eeea31984",
@@ -57,7 +57,7 @@
     archive = { path = "prismarine/apps/archive.lua", sha256 = "4152c914e9a8053c74362ffba1af3e083885765580d2dde8646df6cb71c9b389" },
   },
   store = {
-    { name = "Audio", about = "DFPWM music player with a visualizer", dest = "programs/audio.lua", sha256 = "e12fb196e12aacf702198a5f1b314bb08ea9b75f809626c42260e661ab24ceb8", size = 51172, file = "store/p.audio_v3.lua" },
+    { name = "Audio", about = "DFPWM music player with a visualizer", dest = "programs/audio.lua", sha256 = "23454c5e791f1575eaa86e2c905aed11caed441ba0a6307adad4d25153d9e9f7", size = 54338, file = "store/p.audio_v3.lua" },
     { name = "Portals", about = "Open, seal and name Egress portals from a computer", dest = "programs/portals.lua", sha256 = "7817534aed0817479e58584b8ce371c34a458f0984717745083d8e3e3f847cff", size = 17688, file = "store/p.portals_v1.lua" },
     { name = "Gate", about = "Dial and confirm Egress gates from a computer", dest = "programs/gate.lua", sha256 = "7652b30afa18ef98e4903486ecb3cda7c84f562f04bed298e65c7b21e2e723fc", size = 15498, file = "store/p.gate_v1.lua" },
     { name = "Living Mice", about = "Music track for Audio (1 MB)", dest = "music/Living Mice.dfpwm", sha256 = "6b039d139e51a50903281a1a688cf50652022fb0ce903bd12e1b285a0dc74c82", size = 1065018, url = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/1-05.%20Living%20Mice.dfpwm" },
