@@ -99,8 +99,8 @@ local function parseManifest(data)
     for _, e in ipairs(t.store) do
       if type(e) == "table" and type(e.name) == "string" and #e.name <= 24 and not e.name:find("%c")
         and type(e.about) == "string" and #e.about <= 80
-        and type(e.sha256) == "string" and #e.sha256 == 64
-        and type(e.size) == "number" and e.size > 0 and e.size <= STORE_MAX
+        and (e.sha256 == nil or (type(e.sha256) == "string" and #e.sha256 == 64))
+        and (e.size == nil or (type(e.size) == "number" and e.size > 0 and e.size <= STORE_MAX))
         and okPath(e.dest) and (e.dest:sub(1, 9) == "programs/" or e.dest:sub(1, 6) == "music/")
         and ((okPath(e.file) and not e.url) or (type(e.url) == "string" and e.url:match("^https://[%w%.%-]+/") and not e.file)) then
         store[#store + 1] = { name = e.name, about = e.about, sha256 = e.sha256, size = e.size,
@@ -277,6 +277,100 @@ end
 
 -- What is installed is worked out once per file and remembered. Hashing a
 -- file on every screen redraw made the Download app lag the whole computer.
+
+-- ------------------------------------------------------- live repo listing
+-- Instead of a hand-kept list, read the GitHub repo itself. Any .lua file in a
+-- folder named "store" becomes a program, any .dfpwm file in a folder named
+-- "store" or "music" becomes a music track. No hash is checked on these.
+-- Skipped in Archive mode, which only trusts the signed list.
+local aboutCache = {}
+
+local function urlEncode(u)
+  return (u:gsub("[^%w%-%._~:/%?#%[%]@!$&'()*+,;=%%]", function(c) return ("%%%02X"):format(c:byte()) end))
+end
+
+local function titleCase(w)
+  return (w:gsub("(%a)([%w]*)", function(a, b) return a:upper() .. b end))
+end
+
+local function listRepo()
+  local o, r, b, sub = base():match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)/(.*)$")
+  if not o then return nil, "The update address is not a GitHub address." end
+  local data, err = get("https://api.github.com/repos/" .. o .. "/" .. r .. "/git/trees/" .. b .. "?recursive=1")
+  if not data then return nil, "GitHub did not answer (" .. tostring(err) .. ")." end
+  local ok, t = pcall(textutils.unserialiseJSON, data)
+  if not ok or type(t) ~= "table" or type(t.tree) ~= "table" then return nil, "GitHub gave an unreadable list." end
+  local raw = "https://raw.githubusercontent.com/" .. o .. "/" .. r .. "/" .. b .. "/"
+  local found, byDest = {}, {}
+  for _, f in ipairs(t.tree) do
+    local path = f.path
+    if f.type == "blob" and type(path) == "string" and type(f.size) == "number" and f.size > 0 and f.size <= STORE_MAX
+      and not path:find("%.%.") then
+      local parts = {}
+      for part in path:gmatch("[^/]+") do parts[#parts + 1] = part end
+      local file = parts[#parts]
+      local ext = file:match("%.(%w+)$")
+      local inDir = false
+      for i = 1, #parts - 1 do
+        if parts[i] == "store" or (parts[i] == "music" and ext == "dfpwm") then inDir = true end
+      end
+      if inDir and (ext == "lua" or ext == "dfpwm") then
+        local stem = file:sub(1, -#ext - 2)
+        local ver = 0
+        local e
+        if ext == "lua" then
+          stem = stem:gsub("^p%.", "")
+          local v = stem:match("_v(%d+)$")
+          if v then ver = tonumber(v); stem = stem:gsub("_v%d+$", "") end
+          local nm = titleCase((stem:gsub("[_%-]+", " ")))
+          e = { name = nm:sub(1, 24), dest = "programs/" .. stem:lower():gsub("[^%w]+", "_") .. ".lua",
+            size = f.size, url = raw .. urlEncode(path), ver = ver, lua = true }
+        else
+          local nm = stem:gsub("^%d+[%-%.]%d*%.?%s*", "")
+          if nm == "" then nm = stem end
+          e = { name = nm:sub(1, 24), dest = "music/" .. file, size = f.size,
+            url = raw .. urlEncode(path), ver = 0,
+            about = ("Music track (%.1f MB)"):format(f.size / 1000000) }
+        end
+        if okPath(e.dest) and not e.name:find("%c") then
+          local old = byDest[e.dest]
+          if not old then byDest[e.dest] = e; found[#found + 1] = e
+          elseif e.ver > old.ver then
+            for i, x in ipairs(found) do if x == old then found[i] = e end end
+            byDest[e.dest] = e
+          end
+        end
+      end
+    end
+  end
+  -- one line of description from each program's own header
+  for _, e in ipairs(found) do
+    if e.lua then
+      local key = e.url .. ":" .. e.size
+      if aboutCache[key] == nil then
+        local src = get(e.url)
+        local about = "Program"
+        if src then
+          local seenTitle = false
+          local n = 0
+          for line in (src:sub(1, 3000) .. "\n"):gmatch("(.-)\r?\n") do
+            n = n + 1
+            if n > 40 then break end
+            if line:match("^%-%- Prismarine") then seenTitle = true
+            elseif seenTitle and line:match("^%-%-%s*%S") and not line:match("^%-%-@") then
+              about = line:gsub("^%-%-%s*", ""); break
+            end
+          end
+        end
+        aboutCache[key] = about
+      end
+      e.about = aboutCache[key]:sub(1, 80)
+    end
+  end
+  table.sort(found, function(a, b) return a.name:lower() < b.name:lower() end)
+  return found
+end
+
 local instCache = {}
 
 local function fileKey(e)
@@ -285,21 +379,21 @@ local function fileKey(e)
   local mod = 0
   local ok, a = pcall(fs.attributes, p)
   if ok and type(a) == "table" then mod = a.modified or 0 end
-  return fs.getSize(p) .. ":" .. mod .. ":" .. e.sha256
+  return fs.getSize(p) .. ":" .. mod .. ":" .. (e.sha256 or "")
 end
 
 -- Cheap answer from the size alone.
 local function quickState(e)
   local p = "/" .. e.dest
   if not fs.exists(p) or fs.isDir(p) then return "none" end
-  if fs.getSize(p) ~= e.size then return "update" end
+  if e.size and fs.getSize(p) ~= e.size then return "update" end
   return "installed"
 end
 
 -- Exact answer. Hashes the file, so only call it inside a kernel task.
 local function checkState(e)
   local state = quickState(e)
-  if state == "installed" and e.size <= 200000 then
+  if state == "installed" and e.sha256 and e.size and e.size <= 200000 then
     local h = fs.open("/" .. e.dest, "rb")
     local d = h and h.readAll() or ""
     if h then h.close() end
@@ -329,14 +423,20 @@ function U.storeRefresh()
   store.state, store.text, store.frac = "loading", "Loading the list...", nil
   K.task(function()
     local m, signed = fetchManifest()
-    if not m then
+    local entries = m and m.store or nil
+    if not (K.lockdown and K.lockdown()) then
+      local live, why = listRepo()
+      if live then entries, signed = live, "live"
+      elseif not entries then store.state, store.text = "error", tostring(why) return end
+    end
+    if not entries then
       store.state, store.text = "error", tostring(signed)
       return
     end
-    store.entries, store.signed = m.store, signed
+    store.entries, store.signed = entries, signed
     store.state = "ready"
-    store.text = (#m.store == 0) and "The list is empty." or ""
-    for _, e in ipairs(m.store) do checkState(e) end
+    store.text = (#entries == 0) and "The list is empty." or ""
+    for _, e in ipairs(entries) do checkState(e) end
   end, function(ok, err)
     if not ok then store.state, store.text = "error", "Load failed: " .. tostring(err) end
   end)
@@ -355,16 +455,17 @@ function U.storeInstall(name)
   K.task(function()
     local free = fs.getFreeSpace("/")
     local old = fs.exists(dest) and not fs.isDir(dest) and fs.getSize(dest) or 0
-    if free + old < e.size + 20000 then
-      store.text = "Not enough free space (" .. math.floor(free / 1000) .. " KB free, needs " .. math.floor(e.size / 1000) .. " KB)."
+    local need = e.size or 1000000
+    if free + old < need + 20000 then
+      store.text = "Not enough free space (" .. math.floor(free / 1000) .. " KB free, needs " .. math.floor(need / 1000) .. " KB)."
       return
     end
     local url = e.url or (base() .. e.file)
     local data, err = get(url)
     if not data then store.text = "Download failed (" .. tostring(err) .. ")." return end
-    if #data ~= e.size then store.text = "Refused: wrong size." return end
+    if e.size and #data ~= e.size then store.text = "Refused: wrong size." return end
     store.text, store.frac = "Checking " .. e.name .. "...", 0.6
-    if hashBig(data) ~= e.sha256 then store.text = "Refused: the file does not match its hash." return end
+    if e.sha256 and hashBig(data) ~= e.sha256 then store.text = "Refused: the file does not match its hash." return end
     local dir = fs.getDir(dest)
     if not fs.exists(dir) then fs.makeDir(dir) end
     local tmp = dest .. ".new"

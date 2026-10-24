@@ -3,19 +3,22 @@
     "name": "Audio",
     "about": "DFPWM music player with a visualizer",
     "file": "store/p.audio_v3.lua",
-    "dest": "programs/audio.lua"
+    "dest": "programs/audio.lua",
+    "auto": true
   },
   {
     "name": "Portals",
     "about": "Open, seal and name Egress portals from a computer",
     "file": "store/p.portals_v1.lua",
-    "dest": "programs/portals.lua"
+    "dest": "programs/portals.lua",
+    "auto": true
   },
   {
     "name": "Gate",
     "about": "Dial and confirm Egress gates from a computer",
     "file": "store/p.gate_v1.lua",
-    "dest": "programs/gate.lua"
+    "dest": "programs/gate.lua",
+    "auto": true
   },
   {
     "name": "Living Mice",

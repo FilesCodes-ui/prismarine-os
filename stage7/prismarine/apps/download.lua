@@ -130,6 +130,7 @@ local function drawOfficial(s, st)
   local level = nil
   if st.state == "error" then level = "warn" end
   if st.signed == "ok" and st.state == "ready" and (line or "") == "" then line, level = "Signed list. Every file is hash checked.", "ok" end
+  if st.signed == "live" and st.state == "ready" and (line or "") == "" then line, level = "Live list from GitHub. Files are not hash checked.", "warn" end
   if st.signed == "none" and st.state == "ready" and (line or "") == "" then line, level = "This list is not signed. Files are still hash checked.", "warn" end
   if st.state == "installing" and st.frac then
     s:meter(2, H - 3, W - 2, st.frac, kit.c("ok"), kit.c("bar"))
