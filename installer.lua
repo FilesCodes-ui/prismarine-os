@@ -1,26 +1,34 @@
--- Prismarine OS installer v3 for CC:Tweaked 1.20.1
+-- Prismarine OS installer v4 for CC:Tweaked 1.20.1
 --
--- Installs three editions:
---   Full      the kernel version, installed from a stage folder (stage5, ...).
+-- Installs four editions:
+--   Release   the 1.x line (Release 1.0, 1.1, ...). Files come from the repo's
+--             release/ folder, each one checked against release/manifest.txt.
+--   Full      the older kernel version, installed from a stage folder (stage5, ...).
 --   Classic   the single file versions 17 and up. Version 18 is broken, so it is
 --             never offered.
 --   Simple    Classic Simple OS, the original versions before the loading
 --             screen (6 and below).
--- Classic and Simple installs can be upgraded, downgraded and undone. A version
--- is a GitHub release tagged pv<number>, a startup_v<number>.lua file in the
--- repo root, or the same file in a classic/ folder (the folder copy wins).
+-- Every install can be upgraded, downgraded and undone. A classic version is a
+-- GitHub release tagged pv<number>, a startup_v<number>.lua file in the repo
+-- root, or the same file in a classic/ folder (the folder copy wins).
+-- A Release version is the one in release/ on the main branch (the newest), or
+-- a GitHub release tagged r<major>.<minor> such as r1.0, which holds the
+-- release/ folder as it was for that version.
 --
 --   pastebin run <code>                  menu
+--   pastebin run <code> release          menu of releases (1.x)
+--   pastebin run <code> release 1.1      install Release 1.1
+--   pastebin run <code> 1.1              same as release 1.1 (a number with a dot picks Release)
 --   pastebin run <code> full             install the newest full stage
 --   pastebin run <code> full 5           install stage 5
 --   pastebin run <code> classic          menu of classic versions
 --   pastebin run <code> classic 21       install classic version 21
 --   pastebin run <code> simple 6         install Simple OS version 6
---   pastebin run <code> 21               same as classic 21 (a number picks the edition)
---   pastebin run <code> undo             restore what the last classic install replaced
+--   pastebin run <code> 21               same as classic 21 (a whole number picks the edition)
+--   pastebin run <code> undo             restore what the last install replaced
 --   add owner/repo to any command to take it from another GitHub repo
 
-local INSTALLER_VERSION = "3"
+local INSTALLER_VERSION = "4"
 local REPO   = "FilesCodes-ui/prismarine-os"   -- owner/name, or owner/name@branch
 local STATE  = "/.prismarine_installed.json"
 local STAGE  = "/.prismarine_stage"
@@ -35,7 +43,34 @@ local BROKEN = { [18] = true }   -- never offered, never installed
 local function inClassic(n) return n >= CLASSIC_MIN and not BROKEN[n] end
 local function inSimple(n) return n <= SIMPLE_MAX and not BROKEN[n] end
 
+-- Release (1.x). The same pinned Pixelbox the release's own setup.lua uses.
+-- It is optional: without it the UI falls back to plain text mode.
+local RELEASE_MAJOR = 1
+local RELEASE_PROBE = 30     -- minors checked one by one when GitHub's API is blocked
+local RELEASE_NEED  = 700 * 1024
+local RELEASE_KEEP  = { "prismarine/data/", "appdata/" }
+local INSTALL_JSON  = "prismarine/data/install.json"
+local PB_URL  = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/82098c8dca939b7689f119d0a577c311d4a09281/pixelbox_lite.lua"
+local PB_PATH = "prismarine/lib/pixelbox_lite.lua"
+local PB_HASH = "e9923dc24ed6d968de668f42a3c324d0957778a709d93bc9190617c32889de99"
+
 local args = { ... }
+
+-- ── Version compare ─────────────────────────────────────────────────────────
+-- Classic and Simple versions are whole numbers. Release versions are "1.10"
+-- style text, compared part by part (1.10 is newer than 1.9).
+local function relParts(v)
+    local a, b = tostring(v):match("^(%d+)%.(%d+)$")
+    if a then return tonumber(a), tonumber(b) end
+end
+
+local function isOlder(a, b)
+    if type(a) == "number" and type(b) == "number" then return a < b end
+    local a1, a2 = relParts(a)
+    local b1, b2 = relParts(b)
+    if a1 and b1 then return a1 < b1 or (a1 == b1 and a2 < b2) end
+    return false
+end
 
 -- ── SHA-256 (the same code the OS uses to check its own file) ───────────────
 local SHA_K = { 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 }
@@ -282,13 +317,17 @@ local function readFile(path)
     return s
 end
 
+-- Returns false when the file cannot be written (a full computer included).
 local function writeFile(path, data)
-    fs.makeDir(fs.getDir(path))
-    local f = fs.open(path, "wb")
-    if not f then return false end
-    f.write(data)
-    f.close()
-    return true
+    local ok, res = pcall(function()
+        fs.makeDir(fs.getDir(path))
+        local f = fs.open(path, "wb")
+        if not f then return false end
+        f.write(data)
+        f.close()
+        return true
+    end)
+    return ok and res and true or false
 end
 
 -- A path from a manifest is never trusted. No absolute paths, no "..",
@@ -328,13 +367,15 @@ local function releasesFromApi()
     return out
 end
 
--- Lists a repo folder through GitHub's API. Returns nil when the API is blocked.
+-- Lists a repo folder through GitHub's API. Returns nil when the API is blocked
+-- (second value "blocked") or the folder is not there (second value "Not Found").
 local function contents(folder)
     local repo, branch = repoParts()
     local path = (folder ~= "" and (folder .. "/") or "")
     local body = httpGet("https://api.github.com/repos/" .. repo .. "/contents/" .. path .. "?ref=" .. branch)
     local data = body and textutils.unserialiseJSON(body)
-    if type(data) ~= "table" or data.message then return nil end
+    if type(data) ~= "table" then return nil, "blocked" end
+    if data.message then return nil, tostring(data.message) end
     return data
 end
 
@@ -393,6 +434,57 @@ local function listVersions()
     return list
 end
 
+-- Release (1.x) versions, newest first. The newest is whatever release/ holds
+-- on the branch. Older ones are GitHub releases tagged r1.0, r1.1 ... whose
+-- release/ folder is that version.
+local function releaseTagsFromApi()
+    local repo = repoParts()
+    local body = httpGet("https://api.github.com/repos/" .. repo .. "/releases?per_page=100")
+    local data = body and textutils.unserialiseJSON(body)
+    if type(data) ~= "table" or data.message then return nil end
+    local out = {}
+    for _, r in ipairs(data) do
+        local tag = type(r) == "table" and not r.draft and type(r.tag_name) == "string" and r.tag_name
+        local v = tag and tag:match("^r(%d+%.%d+)$")
+        if v then out[#out + 1] = { version = v, kind = "release", ref = tag, folder = "release" } end
+    end
+    return out
+end
+
+local function listReleases()
+    local out, seen = {}, {}
+    local function add(e)
+        if not seen[e.version] then
+            seen[e.version] = true
+            out[#out + 1] = e
+        end
+    end
+    local body = httpGet(fresh(rawUrl("release/manifest.txt")))
+    local t = body and textutils.unserialise(body)
+    local cur = type(t) == "table" and type(t.version) == "string" and t.version:match("^Release (%d+%.%d+)$")
+    if cur then add({ version = cur, kind = "release", folder = "release" }) end
+
+    local tagged = releaseTagsFromApi()
+    if not tagged then
+        say("GitHub release list unavailable, checking each version...", colors.lightGray)
+        tagged = {}
+        for minor = 0, RELEASE_PROBE do
+            local x, y = term.getCursorPos()
+            term.setCursorPos(1, y)
+            term.clearLine()
+            write("Checking release " .. RELEASE_MAJOR .. "." .. minor .. " of " .. RELEASE_MAJOR .. "." .. RELEASE_PROBE)
+            local tag = "r" .. RELEASE_MAJOR .. "." .. minor
+            if urlExists(rawUrl("release/manifest.txt", tag)) then
+                tagged[#tagged + 1] = { version = RELEASE_MAJOR .. "." .. minor, kind = "release", ref = tag, folder = "release" }
+            end
+        end
+        print()
+    end
+    for _, e in ipairs(tagged) do add(e) end
+    table.sort(out, function(a, b) return isOlder(b.version, a.version) end)
+    return out
+end
+
 -- Full version stages, newest first. A stage folder holds a setup.lua.
 -- New stages live in full/stageN. Older ones sit in the repo root as stageN.
 local function listStages()
@@ -435,9 +527,56 @@ local function singleFile(entry, want)
     }
 end
 
+-- Where the OS's own updater looks for new releases afterward.
+local function installBase()
+    local repo, branch = repoParts()
+    return "https://raw.githubusercontent.com/" .. repo .. "/" .. branch .. "/release/"
+end
+
+-- A Release version: release/manifest.txt lists every file with its SHA-256.
+-- Returns a manifest in the installer's own shape, or nil and a reason.
+local function loadRelease(entry, want)
+    local body, err = httpGet(fresh(rawUrl(entry.folder .. "/manifest.txt", entry.ref)))
+    if not body then return nil, "Could not download manifest.txt.\n" .. tostring(err) end
+    local got = sha256(body)
+    if want and got ~= want then
+        return nil, "Manifest does not match your hash.\nGot " .. got
+    end
+    local t = textutils.unserialise(body)
+    if type(t) ~= "table" or type(t.files) ~= "table" or t.version ~= "Release " .. entry.version then
+        return nil, "Manifest is malformed or is not Release " .. entry.version .. "."
+    end
+    local names = {}
+    for p, h in pairs(t.files) do
+        if not safePath(p) or type(h) ~= "string" or #h ~= 64 or not h:match("^%x+$") then
+            return nil, "Manifest has a bad entry: " .. tostring(p)
+        end
+        names[#names + 1] = p
+    end
+    if not t.files["startup.lua"] then return nil, "Manifest has no startup.lua." end
+    table.sort(names)
+    local files = {}
+    for _, p in ipairs(names) do
+        files[#files + 1] = { path = p, src = entry.folder .. "/" .. p, sha256 = t.files[p]:lower() }
+    end
+    if not t.files[PB_PATH] then
+        files[#files + 1] = { path = PB_PATH, url = PB_URL, sha256 = PB_HASH, optional = true }
+    end
+    -- Written here, not downloaded. It tells the OS where updates come from.
+    files[#files + 1] = {
+        path = INSTALL_JSON,
+        content = textutils.serialiseJSON({ base = installBase(), version = t.version }),
+    }
+    return {
+        version = entry.version, dataFormat = 1, bootstrap = "startup.lua", keep = RELEASE_KEEP,
+        ref = entry.ref, release = true, manifestSha256 = got, files = files,
+    }
+end
+
 -- Turns a version into a manifest table, or returns nil and a reason.
 -- want is the SHA-256 the user typed, or nil.
 local function loadManifest(entry, want)
+    if entry.kind == "release" then return loadRelease(entry, want) end
     if entry.kind == "legacy" then return singleFile(entry, want) end
     local body = httpGet(fresh(rawUrl("manifest.json", entry.ref)))
     if not body then
@@ -473,10 +612,16 @@ end
 
 -- ── Installed state ─────────────────────────────────────────────────────────
 -- v21 and older installs have no state file. Their version is in startup.lua.
+-- A Release put on by its own setup.lua has no state file either, but it
+-- leaves prismarine/data/install.json.
 local function installedState()
     local raw = readFile(STATE)
     local st = raw and textutils.unserialiseJSON(raw)
     if type(st) == "table" and type(st.files) == "table" then return st end
+    local ij = readFile(INSTALL_JSON)
+    local info = ij and textutils.unserialiseJSON(ij)
+    local rv = type(info) == "table" and type(info.version) == "string" and info.version:match("^Release (%d+%.%d+)$")
+    if rv then return { version = rv, edition = "release", dataFormat = 1, files = {}, guessed = true } end
     local boot = readFile("startup.lua")
     local v = boot and boot:match('local VERSION = "(%d+)"')
     if v then return { version = tonumber(v), dataFormat = 1, files = { "startup.lua" }, guessed = true } end
@@ -502,7 +647,8 @@ local function install(entry)
     banner()
     local cur = installedState()
     local n = entry.version
-    say("Target: version " .. n, colors.lightBlue)
+    local isRelease = entry.kind == "release"
+    say("Target: version " .. n .. (isRelease and "  (Release)" or ""), colors.lightBlue)
     say("Installed: " .. (cur and ("version " .. cur.version) or "none found"), colors.lightGray)
     print()
 
@@ -517,7 +663,9 @@ local function install(entry)
     local m, why = loadManifest(entry, want)
     if not m then fail("Cannot use this version.", why) end
 
-    local downgrade = cur and n < cur.version
+    -- Versions only compare inside one edition: Release 1.1 against Release 1.0.
+    local curEdition = cur and (cur.edition or "legacy")
+    local downgrade = cur and curEdition == (m.release and "release" or "legacy") and isOlder(n, cur.version)
     local dataDown = cur and (m.dataFormat or 1) < (cur.dataFormat or 1)
     print()
     say(m.legacy and "Single file version." or ("Multi file version, " .. #m.files .. " files."), colors.lightGray)
@@ -542,53 +690,91 @@ local function install(entry)
         return false
     end
 
-    -- 1. Download and check everything into a staging folder.
+    -- A fresh Release needs about 700 KB. Stop early with a clear message.
+    if m.release and not fs.exists("prismarine") then
+        local okFree, free = pcall(fs.getFreeSpace, "/")
+        if okFree and type(free) == "number" and free < RELEASE_NEED then
+            say(("Not enough room: %d KB free, about %d KB needed."):format(math.floor(free / 1024), math.floor(RELEASE_NEED / 1024)), colors.red)
+            say("Raise the computer space limit to 20 MB:")
+            say("  1. Close the world.")
+            say("  2. Open the world folder, then serverconfig.")
+            say("  3. Edit computercraft-server.toml.")
+            say("  4. Set computer_space_limit = 20000000.")
+            say("  5. Open the world and run this installer again.")
+            return false
+        end
+    end
+
+    -- 1. Download and check everything into a staging folder. A file that is
+    --    already on the computer unchanged is not staged again, which keeps an
+    --    upgrade small. A file the manifest marks optional is skipped when it
+    --    cannot be fetched or checked.
     fs.delete(STAGE)
     local total = #m.files
+    local unchanged, usable = {}, {}
     for i, f in ipairs(m.files) do
         local x, y = term.getCursorPos()
         term.setCursorPos(1, y)
         term.clearLine()
         write("Downloading " .. i .. "/" .. total .. " " .. f.path:sub(-30))
-        local body, err = httpGet(fresh(rawUrl(f.src, m.ref)))
+        local body, err = f.content, nil
+        if not body then body, err = httpGet(fresh(f.url or rawUrl(f.src, m.ref))) end
+        local problem
         if not body then
-            fs.delete(STAGE)
-            print()
-            fail("Download failed: " .. f.path, err)
-        end
-        local got = sha256(body)
-        if f.sha256 and got ~= f.sha256 then
-            fs.delete(STAGE)
-            print()
-            fail("Hash mismatch: " .. f.path, "Got " .. got .. "\nNothing was changed.")
-        end
-        f.sha256 = f.sha256 or got
-        if f.path:match("%.lua$") then
-            local fn, serr = load(body, "=" .. f.path)
-            if not fn then
-                fs.delete(STAGE)
-                print()
-                fail("Syntax error in " .. f.path, serr)
+            problem = "Download failed: " .. f.path
+        else
+            local got = sha256(body)
+            if f.sha256 and got ~= f.sha256 then
+                problem, err = "Hash mismatch: " .. f.path, "Got " .. got .. "\nNothing was changed."
+            else
+                f.sha256 = f.sha256 or got
             end
         end
-        if not writeFile(STAGE .. "/" .. f.path, body) then
+        if not problem and f.path:match("%.lua$") then
+            local fn, serr = load(body, "=" .. f.path)
+            if not fn then problem, err = "Syntax error in " .. f.path, serr end
+        end
+        if problem and f.optional then
+            print()
+            say("Skipped " .. f.path .. ". " .. problem, colors.yellow)
+            if fs.exists(f.path) then
+                -- the copy already here was checked when it went in; keep it
+                usable[#usable + 1] = f
+                unchanged[f.path] = true
+            end
+        elseif problem then
             fs.delete(STAGE)
             print()
-            fail("Cannot write staging file.", f.path)
+            fail(problem, err)
+        else
+            usable[#usable + 1] = f
+            if readFile(f.path) == body then
+                unchanged[f.path] = true
+            elseif not writeFile(STAGE .. "/" .. f.path, body) then
+                fs.delete(STAGE)
+                print()
+                fail("Cannot write staging file. The computer may be out of space.", f.path)
+            end
         end
     end
+    m.files = usable
     print()
-    say("All " .. total .. " files verified.", colors.lime)
+    say("All " .. #m.files .. " files verified.", colors.lime)
 
     -- 2. Work out what changes, then save the old copies.
     local newSet, writes, removes = {}, {}, {}
     for _, f in ipairs(m.files) do
         newSet[f.path] = true
-        writes[#writes + 1] = f.path
+        if not unchanged[f.path] then writes[#writes + 1] = f.path end
     end
-    for _, p in ipairs(cur and cur.files or {}) do
-        if safePath(p) and not newSet[p] and not isKept(p, m.keep) and not isKept(p, cur.keep) then
-            removes[#removes + 1] = p
+    -- Leaving the Release line for another edition leaves its files in place,
+    -- as installing over a full version always did.
+    local leaving = cur and cur.edition == "release" and not m.release
+    if not leaving then
+        for _, p in ipairs(cur and cur.files or {}) do
+            if safePath(p) and not newSet[p] and not isKept(p, m.keep) and not isKept(p, cur.keep) then
+                removes[#removes + 1] = p
+            end
         end
     end
     for _, p in ipairs(writes) do
@@ -621,6 +807,15 @@ local function install(entry)
     writeFile(BACKUP .. "/journal.json", textutils.serialiseJSON(journal))
     say("Old files saved. Run the installer with 'undo' to restore them.", colors.lightGray)
 
+    -- A startup.lua that is not Prismarine's is kept as startup.lua.bak.
+    if m.release and fs.exists("startup.lua") then
+        local old = readFile("startup.lua")
+        if old and not old:find("-- prismarine-boot-v1", 1, true) then
+            copyPath("startup.lua", "startup.lua.bak")
+            say("Old startup saved as startup.lua.bak", colors.lightGray)
+        end
+    end
+
     -- 3. Move into place. The bootstrap goes last, so a crash halfway
     --    leaves the old startup.lua running.
     for _, p in ipairs(writes) do
@@ -630,9 +825,11 @@ local function install(entry)
             fs.move(STAGE .. "/" .. p, p)
         end
     end
-    if fs.exists(m.bootstrap) then fs.delete(m.bootstrap) end
-    fs.makeDir(fs.getDir(m.bootstrap))
-    fs.move(STAGE .. "/" .. m.bootstrap, m.bootstrap)
+    if not unchanged[m.bootstrap] then
+        if fs.exists(m.bootstrap) then fs.delete(m.bootstrap) end
+        fs.makeDir(fs.getDir(m.bootstrap))
+        fs.move(STAGE .. "/" .. m.bootstrap, m.bootstrap)
+    end
 
     -- 4. Remove files the target version does not own.
     for _, p in ipairs(removes) do
@@ -643,16 +840,24 @@ local function install(entry)
 
     -- 5. Record what is installed.
     local names = {}
-    for _, p in ipairs(writes) do names[#names + 1] = p end
+    for _, f in ipairs(m.files) do names[#names + 1] = f.path end
     writeFile(STATE, textutils.serialiseJSON({
-        version = n, dataFormat = m.dataFormat, files = names, keep = m.keep,
+        version = n, edition = m.release and "release" or "legacy",
+        dataFormat = m.dataFormat, files = names, keep = m.keep,
         manifestSha256 = m.manifestSha256,
     }))
 
     print()
-    say("Installed Prismarine OS version " .. n .. ".", colors.lime)
+    if m.release then
+        say("Installed Prismarine Release " .. n .. ".", colors.lime)
+    else
+        say("Installed Prismarine OS version " .. n .. ".", colors.lime)
+    end
+    local changed = #writes
+    if m.release and cur then say(changed .. " of " .. #m.files .. " files changed.", colors.lightGray) end
     if #removes > 0 then say(#removes .. " old files removed.", colors.lightGray) end
     if m.manifestSha256 then say("Manifest SHA-256 " .. m.manifestSha256, colors.lightGray) end
+    if m.release and not cur then say("Reboot to start Prismarine. You will choose a password.", colors.lightGray) end
     say("If secure boot was enrolled, re-enroll it.", colors.lightGray)
     return true
 end
@@ -746,7 +951,7 @@ local function installStage(entry)
     return true
 end
 
--- ── Classic and Simple ─────────────────────────────────────────────────────
+-- ── Release, Classic and Simple ────────────────────────────────────────────
 local function chooseEntry(title, items, label)
     local opts = { "Install the newest, " .. label(items[1]), "Choose a version...", "Cancel" }
     local choice = menu(title, opts)
@@ -808,6 +1013,27 @@ local function runLegacy(edition, wantedN)
     return install(entry)
 end
 
+-- wantedVer is "1.1" style text, or nil to choose from a menu.
+local function runRelease(wantedVer)
+    say("Looking for Prismarine releases in " .. REPO .. " ...")
+    local items = listReleases()
+    if #items == 0 then
+        fail("No release found in " .. REPO .. ".",
+            "Looking for release/manifest.txt, or a GitHub release tagged r1.0, r1.1 ...")
+    end
+    local entry
+    if wantedVer then
+        for _, v in ipairs(items) do
+            if v.version == wantedVer then entry = v end
+        end
+        if not entry then fail("There is no Release " .. wantedVer .. ".") end
+    else
+        entry = chooseEntry("Prismarine Release, 1.x", items, classicLabel("Release"))
+    end
+    if not entry then return nil end
+    return install(entry)
+end
+
 local function runFull(wantedN)
     say("Looking for full versions in " .. REPO .. " ...")
     local stages = listStages()
@@ -842,6 +1068,10 @@ local function run()
     local done
     if wanted == "undo" then
         done = undo()
+    elseif wanted == "release" then
+        done = runRelease(second and second:match("^%d+%.%d+$") or nil)
+    elseif wanted and wanted:match("^%d+%.%d+$") then
+        done = runRelease(wanted)
     elseif wanted == "full" or wanted == "latest" then
         done = runFull(num)
     elseif wanted == "classic" or wanted == "simple" then
@@ -853,19 +1083,19 @@ local function run()
         elseif inSimple(n) then done = runLegacy("simple", n)
         else fail("Version " .. n .. " is not offered.", "Classic is " .. CLASSIC_MIN .. " and up without 18. Simple OS is " .. SIMPLE_MAX .. " and below.") end
     else
-        local opts = {
-            "Full version, Prismarine kernel",
-            "Classic, versions 17 and up, no 18",
-            "Classic Simple OS, before the loading screen",
-        }
-        local hasUndo = fs.exists(BACKUP .. "/journal.json")
-        if hasUndo then opts[#opts + 1] = "Undo the last classic install" end
-        opts[#opts + 1] = "Cancel"
+        local opts, acts = {}, {}
+        local function add(label, fn)
+            opts[#opts + 1] = label
+            acts[#acts + 1] = fn
+        end
+        add("Release, 1.x (newest)", function() return runRelease(nil) end)
+        add("Full version, older kernel stages", function() return runFull(nil) end)
+        add("Classic, versions 17 and up, no 18", function() return runLegacy("classic", nil) end)
+        add("Classic Simple OS, before the loading screen", function() return runLegacy("simple", nil) end)
+        if fs.exists(BACKUP .. "/journal.json") then add("Undo the last install", undo) end
+        add("Cancel", function() return nil end)
         local choice = menu("Prismarine installer v" .. INSTALLER_VERSION, opts)
-        if choice == 1 then done = runFull(nil)
-        elseif choice == 2 then done = runLegacy("classic", nil)
-        elseif choice == 3 then done = runLegacy("simple", nil)
-        elseif choice == 4 and hasUndo then done = undo() end
+        if choice then done = acts[choice]() end
     end
 
     if done == nil then
