@@ -26,7 +26,7 @@ local dfpwm = require("cc.audio.dfpwm")
 local api = ...
 if type(api) ~= "table" then api = nil end
 
-local VERSION = "3"
+local VERSION = "3.1"
 local SETTINGS_FILE = ".prismaudio_settings"
 local BYTES_PER_SEC = 6000      -- DFPWM is 48000 samples per second at 1 bit
 local CHUNK = 2048              -- bytes per step (about 0.34 s of sound)
@@ -41,7 +41,7 @@ local DEFAULTS = {
     repeatMode = "Off",     -- Off, All, One
     theme = "Prismarine",
     viz = "Bars",           -- Bars, Mirror, Off
-    speaker = "Auto",       -- Auto, All, or a speaker name
+    speaker = "All",        -- All (every speaker, follows plug and unplug) or a speaker name
     folder = "music",       -- "" is the main folder
 }
 
@@ -181,6 +181,11 @@ end
 
 -- ── Speakers ─────────────────────────────────────────────────────────────────
 
+-- "All" plays on every speaker that is attached. The list is rescanned about
+-- once a second and on every peripheral event, so speakers can be plugged in or
+-- removed while the app runs. A saved "Auto" from older versions means "All".
+if cfg.speaker == "Auto" then cfg.speaker = "All" end
+
 local function speakerNames()
     local names = {}
     for _, n in ipairs(peripheral.getNames()) do
@@ -190,30 +195,92 @@ local function speakerNames()
     return names
 end
 
-local function activeSpeakers()
+local SPK = { names = {}, active = {}, objs = {}, ready = false }
+
+local function pickActive(names)
+    if cfg.speaker == "All" then return names end
+    for _, n in ipairs(names) do
+        if n == cfg.speaker then return { n } end
+    end
+    return names[1] and { names[1] } or {}
+end
+
+-- Rescans the speakers. Returns true when the set in use changed. A speaker
+-- that joins while a track plays makes the audio task re-sync every speaker,
+-- because a new speaker would otherwise start a few seconds ahead of the rest.
+local function refreshSpeakers(announce)
     local names = speakerNames()
+    local act = pickActive(names)
+    local was, now = {}, {}
+    for _, n in ipairs(SPK.active) do was[n] = true end
+    for _, n in ipairs(act) do now[n] = true end
+    local objs, added, removed = {}, {}, {}
+    for _, n in ipairs(act) do
+        local o = SPK.objs[n]
+        if not o or not was[n] then
+            o = peripheral.wrap(n)
+            if o then table.insert(added, n) end
+        end
+        objs[n] = o
+    end
+    for _, n in ipairs(SPK.active) do
+        if not now[n] then table.insert(removed, n) end
+    end
+    local first = not SPK.ready
+    SPK.names, SPK.active, SPK.objs, SPK.ready = names, act, objs, true
+    if first then return true end
+    local changed = #added > 0 or #removed > 0
+    if not changed then return false end
+
+    local have = 0
+    for _ in pairs(objs) do have = have + 1 end
+    if S.playing then
+        if have == 0 then
+            if not S.paused then
+                S.frozen = position()
+                S.paused = true
+                S.noSpk = true
+            end
+        elseif #added > 0 then
+            if S.noSpk then
+                S.noSpk = false
+                S.paused = false          -- sound was paused only for lack of speakers
+            elseif not S.paused then
+                S.resync = true
+            end
+        end
+    end
+    if announce then
+        if have == 0 and #removed > 0 then
+            say("Speaker removed. Paused.", 4)
+        elseif #added > 0 then
+            say("Speaker added: " .. added[1] .. (#added > 1 and (" +" .. (#added - 1)) or ""), 3)
+        elseif #removed > 0 then
+            say("Speaker removed: " .. removed[1] .. (#removed > 1 and (" +" .. (#removed - 1)) or ""), 3)
+        end
+    end
+    return true
+end
+
+-- { name, sp } for each speaker in use right now.
+local function activeSpeakers()
+    if not SPK.ready then refreshSpeakers() end
     local list = {}
-    if cfg.speaker == "All" then
-        for _, n in ipairs(names) do table.insert(list, peripheral.wrap(n)) end
-    else
-        local pick
-        for _, n in ipairs(names) do if n == cfg.speaker then pick = n end end
-        pick = pick or names[1]
-        if pick then table.insert(list, peripheral.wrap(pick)) end
+    for _, n in ipairs(SPK.active) do
+        if SPK.objs[n] then table.insert(list, { name = n, sp = SPK.objs[n] }) end
     end
     return list
 end
 
 local function stopSpeakers()
-    for _, sp in ipairs(activeSpeakers()) do pcall(sp.stop) end
+    for _, e in ipairs(activeSpeakers()) do pcall(e.sp.stop) end
 end
 
 local function speakerLabel()
-    local names = speakerNames()
-    if #names == 0 then return "none" end
-    if cfg.speaker == "All" then return "all " .. #names end
-    for _, n in ipairs(names) do if n == cfg.speaker then return n end end
-    return names[1]
+    if not SPK.ready then refreshSpeakers() end
+    if #SPK.names == 0 then return "none" end
+    if cfg.speaker == "All" then return "all " .. #SPK.active end
+    return SPK.active[1] or "none"
 end
 
 -- ── Visualizer analysis ──────────────────────────────────────────────────────
@@ -294,44 +361,46 @@ local function onTrackEnd()
     end
 end
 
--- Sends one buffer to the speakers. Returns false when playback was changed.
+-- Sends one buffer to every speaker in use. Returns false when playback was
+-- changed. A speaker whose buffer is full is asked again later; a speaker that
+-- errors (it was unplugged) is dropped instead of being waited for.
 local function send(buf)
+    if S.quit or S.want or S.paused or S.resync then return false end
+    local speakers = activeSpeakers()
+    if #speakers == 0 then
+        say("No speaker attached.", 4)
+        S.frozen = position()
+        S.paused = true
+        S.noSpk = true
+        return false
+    end
+    local vol = cfg.muted and 0 or cfg.volume * 3
+    local pending = speakers
+    local waiting, timer = false, nil
     while true do
-        if S.quit or S.want then return false end
-        if S.paused then return false end
-        local speakers = activeSpeakers()
-        if #speakers == 0 then
-            say("No speaker attached.", 4)
-            S.paused = true
-            S.frozen = position()
-            return false
-        end
-        local vol = cfg.muted and 0 or cfg.volume * 3
-        local done = {}
-        local all = true
-        for i, sp in ipairs(speakers) do
-            local ok, accepted = pcall(sp.playAudio, buf, vol)
-            if ok and accepted then done[i] = true else all = false end
-        end
-        if all then return true end
-        -- Some speakers took it and some did not. Resend only to the others.
-        local pending = {}
-        for i, sp in ipairs(speakers) do if not done[i] then table.insert(pending, sp) end end
-        local timer = os.startTimer(0.4)
-        while #pending > 0 do
+        local ready = true
+        if waiting then
             local ev, a = os.pullEvent()
-            if S.quit or S.want or S.paused then return false end
-            if ev == "speaker_audio_empty" or (ev == "timer" and a == timer) then
-                local still = {}
-                for _, sp in ipairs(pending) do
-                    local ok, accepted = pcall(sp.playAudio, buf, vol)
-                    if not (ok and accepted) then table.insert(still, sp) end
-                end
-                pending = still
-                if #pending > 0 then timer = os.startTimer(0.4) end
-            end
+            if S.quit or S.want or S.paused or S.resync then return false end
+            ready = ev == "speaker_audio_empty" or (ev == "timer" and a == timer)
         end
-        return true
+        if ready then
+            local still, broke = {}, false
+            for _, e in ipairs(pending) do
+                local ok, accepted = pcall(e.sp.playAudio, buf, vol)
+                if not ok then
+                    SPK.objs[e.name] = nil      -- rescan below: gone, or wrap it again
+                    broke = true
+                elseif not accepted then
+                    table.insert(still, e)
+                end
+            end
+            if broke then refreshSpeakers(true) end
+            pending = still
+            if #pending == 0 then return true end
+            waiting = true
+            timer = os.startTimer(0.4)
+        end
     end
 end
 
@@ -354,11 +423,27 @@ local function playTrack(want)
     S.t0 = nowSec()
     S.paused = want.paused and true or false
     S.playing = true
+    S.resync = false
     local fresh = true       -- the clock starts at the first buffer
     local finished = false
 
     while true do
         if S.quit or S.want then break end
+        if S.resync then
+            -- The set of speakers changed. Flush them all and restart every one
+            -- from where the sound is now, so they stay together.
+            S.resync = false
+            if not S.paused then
+                local now = position()
+                stopSpeakers()
+                S.frames = {}
+                pos = clamp(math.floor(now * BYTES_PER_SEC), 0, math.max(0, size - 1))
+                f.seek("set", pos)
+                decoder = dfpwm.make_decoder()
+                S.base = pos / BYTES_PER_SEC
+                fresh = true
+            end
+        end
         if S.paused then
             stopSpeakers()
             S.frames = {}
@@ -413,7 +498,8 @@ end
 
 local function startTrack(name, offset, noHistory)
     if not name then return end
-    if #speakerNames() == 0 then say("No speaker attached.", 4); return end
+    refreshSpeakers()
+    if #SPK.active == 0 then say("No speaker attached.", 4); return end
     if not noHistory and S.current and S.current ~= name then
         table.insert(S.history, S.current)
         if #S.history > 100 then table.remove(S.history, 1) end
@@ -437,6 +523,7 @@ local function togglePause()
         startTrack(selectedName() or S.current)
         return
     end
+    S.noSpk = false
     if S.paused then
         S.paused = false
     else
@@ -500,13 +587,13 @@ local function setVolume(v)
 end
 
 local function cycleSpeaker()
-    local options = { "Auto" }
-    local names = speakerNames()
-    if #names > 1 then table.insert(options, "All") end
-    for _, n in ipairs(names) do table.insert(options, n) end
+    local options = { "All" }
+    for _, n in ipairs(speakerNames()) do table.insert(options, n) end
+    if S.playing then stopSpeakers() end
     cfg.speaker = cycle(options, cfg.speaker)
     saveCfg()
-    if S.playing then stopSpeakers() end
+    refreshSpeakers()
+    if S.playing and not S.paused then S.resync = true end
     say("Speaker: " .. speakerLabel(), 2)
 end
 
@@ -1018,7 +1105,7 @@ local function draw()
     flag("SHUF", cfg.shuffle, "s")
     flag("REP:" .. cfg.repeatMode, cfg.repeatMode ~= "Off", "r")
     if W >= 40 then flag("VIZ:" .. cfg.viz, cfg.viz ~= "Off", "v") end
-    if W >= 46 then flag("SPK:" .. speakerLabel():sub(1, 10), #speakerNames() > 0, "o") end
+    if W >= 46 then flag("SPK:" .. speakerLabel():sub(1, 10), #SPK.active > 0, "o") end
 
     footer({
         { tag = "Spc", label = S.paused and "Play" or (S.playing and "Pause" or "Play"), k = "space" },
@@ -1049,7 +1136,7 @@ local function helpScreen()
         { "R", "Repeat: Off, All, One", "Repeat mode" },
         { "/", "Search (Enter keeps, Esc clears)", "Search" },
         { "V", "Visualizer: Bars, Mirror, Off", "Visualizer" },
-        { "O", "Speaker (Auto, All, or one)", "Speaker" },
+        { "O", "Speaker (All, or one)", "Speaker" },
         { "T", "Theme", "Theme" },
         { "F", "Music folder   L rescan", "Folder, L scan" },
         { "Click", "Tracks, seek bar, volume, chips", "Controls", "Mouse" },
@@ -1276,6 +1363,7 @@ end
 
 local function inputTask()
     local timer = os.startTimer(0.1)
+    local nextSpk = 0
     draw()
     while not S.quit do
         local ev, a, b, c = os.pullEventRaw()
@@ -1285,8 +1373,13 @@ local function inputTask()
         elseif ev == "timer" then
             if a == timer then
                 timer = os.startTimer(0.1)
+                local changed = false
+                if nowSec() >= nextSpk then
+                    nextSpk = nowSec() + 1
+                    changed = refreshSpeakers(true)
+                end
                 stepViz()
-                redraw = animating()
+                redraw = animating() or changed
             else
                 redraw = false
             end
@@ -1314,11 +1407,7 @@ local function inputTask()
             if api and api.handleNet then pcall(api.handleNet, a, b, c) end
             redraw = false
         elseif ev == "peripheral" or ev == "peripheral_detach" then
-            if ev == "peripheral_detach" and S.playing and #speakerNames() == 0 then
-                S.frozen = position()
-                S.paused = true
-                say("Speaker removed. Paused.", 4)
-            end
+            refreshSpeakers(true)
         elseif ev == "mouse_drag" then
             handleClick(b, c)
             lastClickAt = 0
@@ -1338,7 +1427,7 @@ local function bootScreen()
     if not sc then rescan(); return end
     sc.tag = "Audio  v" .. VERSION
     api.boot.stage(sc, "Starting", 0.15)
-    api.boot.stage(sc, "Finding speakers", 0.45, function() speakerNames() end)
+    api.boot.stage(sc, "Finding speakers", 0.45, function() refreshSpeakers() end)
     api.boot.stage(sc, "Reading /" .. folderPath(), 0.8, function(tick)
         rescan()
         tick()
