@@ -128,7 +128,7 @@ local function draw()
         else
           s:text(4, y + 2, kit.fit(narrow and it.tag or "Size not available", W - 8), hint, gray)
         end
-        hits[#hits + 1] = { 2, y, W - 2, y + 4, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+        hits[#hits + 1] = { 2, y, W - 2, y + 4, function() if sel == idx then os.queueEvent("disks_open") end sel = idx end }
       end
     end
     s:scroll(W, 3, ch, #items, top, per)
@@ -144,7 +144,7 @@ local function draw()
         local idx = top + i
         s:row(3, 3 + i, W - 4, (it.dir and "> " or "  ") .. it.name .. (it.dir and "/" or ""), idx == sel,
           { right = it.tag ~= "" and it.tag or nil, fg = it.dir and kit.c("info") or nil })
-        hits[#hits + 1] = { 3, 3 + i, W - 2, 3 + i, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+        hits[#hits + 1] = { 3, 3 + i, W - 2, 3 + i, function() if sel == idx then os.queueEvent("disks_open") end sel = idx end }
       end
     end
     s:scroll(W - 1, 4, area, #items, top, area)
@@ -230,7 +230,7 @@ while true do
       sel, top = 1, 0
       refresh()
     end
-  elseif e == "pm_open" then openSel()
+  elseif e == "disks_open" then openSel()
   elseif e == "char" then
     local c = ev[2]:lower()
     local it = items[sel]
