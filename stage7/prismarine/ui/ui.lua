@@ -57,6 +57,7 @@ function M.create(K, cfg)
     toastSide = "right", dnd = false, showText = false, anim = true, haze = true,
     hour24 = true, seconds = true, showDate = true, showHint = true, showStatus = true,
     bubbles = true, shine = true, ripple = true, round = true, toastTime = 4, autoLock = 5,
+    updateEvery = 21600, updateToast = true,
     osName = "Prismarine", colors = {},
     live = "Off", saver = 0, saverMode = "Tide", saverColor = "Blue", saverLink = true, saverLogo = true,
   }
@@ -88,6 +89,8 @@ function M.create(K, cfg)
       G.opts.round = S.round
       if type(t.toastTime) == "number" then S.toastTime = clamp(floor(t.toastTime), 2, 15) end
       if type(t.autoLock) == "number" then S.autoLock = clamp(floor(t.autoLock), 0, 120) end
+      if type(t.updateEvery) == "number" then S.updateEvery = (t.updateEvery <= 0) and 0 or clamp(floor(t.updateEvery), 30, 86400) end
+      if t.updateToast == false then S.updateToast = false end
       if K.lockdown and K.lockdown() then
         local limit = (K.bunker and K.bunker()) and 5 or 15
         if S.autoLock == 0 or S.autoLock > limit then S.autoLock = limit end
@@ -222,7 +225,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
   local DEFAULTS = { anim = true, haze = true, dnd = false, showText = false, toastSide = "right", fps = 12, logoColor = "Blue",
     saverColor = "Blue" }
 
-  local BOOLS = { anim = true, haze = true, dnd = true, showText = true, hour24 = true, seconds = true,
+  local BOOLS = { updateToast = true, anim = true, haze = true, dnd = true, showText = true, hour24 = true, seconds = true,
     showDate = true, showHint = true, showStatus = true, bubbles = true, shine = true, ripple = true, round = true,
     saverLink = true, saverLogo = true }
   local colorNames = {}
@@ -251,6 +254,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
         hour24 = S.hour24, seconds = S.seconds, showDate = S.showDate, showHint = S.showHint,
         showStatus = S.showStatus, bubbles = S.bubbles, shine = S.shine, ripple = S.ripple, round = S.round,
         toastTime = S.toastTime, autoLock = S.autoLock, osName = S.osName, colors = cs,
+        updateEvery = S.updateEvery, updateToast = S.updateToast,
         live = S.live, saver = S.saver, saverMode = S.saverMode,
         saverColor = G.opts.saverColor, saverLink = S.saverLink, saverLogo = S.saverLogo,
         logoRGB = G.colorRGB(G.opts.logoColor), saverRGB = G.colorRGB(G.opts.saverColor),
@@ -268,6 +272,9 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
       elseif key == "toastTime" then
         if type(v) ~= "number" then return false end
         S.toastTime = clamp(floor(v), 2, 15)
+      elseif key == "updateEvery" then
+        if type(v) ~= "number" then return false end
+        S.updateEvery = (v <= 0) and 0 or clamp(floor(v), 30, 86400)
       elseif key == "autoLock" then
         if type(v) ~= "number" then return false end
         local limit = (K.bunker and K.bunker()) and 5 or 15
@@ -330,6 +337,7 @@ local function lockable() return cfg.lock ~= nil and (not cfg.lockOn or cfg.lock
       S.bubbles, S.shine, S.ripple, S.toastTime, S.osName, S.colors = true, true, true, 4, "Prismarine", {}
       S.round = true
       G.opts.round = true
+      S.updateEvery, S.updateToast = 21600, true
       if not (K.lockdown and K.lockdown()) then S.autoLock = 5 end
       S.toastSide, S.fps, S.logoColor = DEFAULTS.toastSide, DEFAULTS.fps, DEFAULTS.logoColor
       G.opts.fps = DEFAULTS.fps

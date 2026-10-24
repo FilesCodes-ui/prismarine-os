@@ -705,15 +705,31 @@ local function main()
     elseif lockdown() then
       K.notifySystem("Archive mode", "Shell, raw Lua and new programs are locked.", "info")
     end
-    -- Look for updates a few seconds after boot, then every six hours.
+    -- Look for updates a few seconds after boot, then on the schedule from
+    -- Settings, Alerts (30 seconds to 6 hours, or never). A toast shows once
+    -- for each new version.
+    local toldVersion = nil
+    local function setting(k)
+      local ok, g = pcall(function() return K.uiApi.get() end)
+      return ok and g and g[k] or nil
+    end
     local function autoCheck()
-      U.check(function(s)
-        if s.state == "available" and not s.told then
-          s.told = true
-          K.notifySystem("Update available", s.text .. " Open Others to install.", "info")
-        end
-      end)
-      K.after(6 * 3600, autoCheck)
+      local every = setting("updateEvery")
+      if every == nil then every = 21600 end
+      if every > 0 then
+        U.check(function(s)
+          if s.state == "available" and s.version ~= toldVersion then
+            toldVersion = s.version
+            if setting("updateToast") ~= false then
+              K.notifySystem("Update available", s.text .. " Open Others to install.", "info")
+            end
+          elseif s.state == "current" then
+            toldVersion = nil
+          end
+        end)
+      end
+      -- Look again soon when checks are off, so turning them on takes effect.
+      K.after(every > 0 and every or 30, autoCheck)
     end
     K.after(8, autoCheck)
   end

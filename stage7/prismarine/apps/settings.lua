@@ -52,6 +52,13 @@ local flash, flashUntil = nil, 0
 local editing = nil      -- { key, buf, mask, label, then }
 local LOCKS = { 0, 1, 2, 5, 10, 15, 30, 60 }
 local TOASTS = { 2, 3, 4, 6, 8, 12 }
+local UPDATES = { 30, 60, 300, 900, 3600, 21600, 0 }   -- seconds; 0 is never
+local function everyText(v)
+  if v == 0 then return "Never" end
+  if v < 60 then return v .. " s" end
+  if v < 3600 then return (v / 60) .. " min" end
+  return (v / 3600) .. " h"
+end
 local hits = {}
 
 local function cycle(list, cur, step)
@@ -177,6 +184,10 @@ local function pages()
         help = "How long a toast stays on screen." },
       { kind = "toggle", label = "Show message text", key = "showText", value = s.showText,
         help = "Show the message in a toast, not only the title." },
+      { kind = "choice", label = "Check for updates", key = "updateEvery", value = s.updateEvery, list = UPDATES, fmt = everyText,
+        help = "How often to look for a new version. Never turns the checks off." },
+      { kind = "toggle", label = "Update toast", key = "updateToast", value = s.updateToast,
+        help = "Show a toast when a new update is found." },
       { kind = "gap" },
       { kind = "action", label = "Send a test toast", id = "test",
         help = "Posts one toast so you see your settings at work." },

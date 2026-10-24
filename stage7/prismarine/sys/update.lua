@@ -31,7 +31,7 @@ local K, C, S
 local DEFAULT_BASE = "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/stage7/"
 local INSTALL = "/prismarine/data/install.json"
 -- Public half of the KHI release key. Signed releases verify against it.
-local RELEASE_KEY = "7f455a1c596f8b2f01a491d80e00fb58de76cfa6fd5ac14ee06c1545e7752f5c"
+local RELEASE_KEY = "43711e10b721b1c1302ef39d91121d2101bc6c70358c1adc721fc76b0d2012ad"
 local STORE_MAX = 18000000   -- bytes. Computers have about 20 MB.
 local state = { state = "idle", text = "Not checked yet.", changed = {}, version = nil, at = nil }
 
