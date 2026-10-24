@@ -136,7 +136,7 @@ local function drawOfficial(s, st)
     s:meter(2, H - 3, W - 2, st.frac, kit.c("ok"), kit.c("bar"))
   end
   if (line or "") ~= "" then s:status(H - 2, line, level) end
-  s:hints(H - 1, { { "Enter", "get" }, { "R", "reload" }, { "Tab", "custom link" }, { "Esc", "quit" } })
+  s:hints(H - 1, { { "Enter", "get" }, { "R", "reload" }, { "Tab", "custom link" }, { "Esc", "close" } })
 end
 
 local function drawCustom(s)
@@ -151,8 +151,8 @@ local function drawCustom(s)
   local col = (lvl == "warn" and kit.c("warn")) or (lvl == "ok" and kit.c("ok")) or kit.c("info")
   s:text(4, 10, kit.fit(status[1], W - 6), col, gray)
   s:text(4, 12, "Limit " .. sizeText(LIMIT) .. "    Free " .. sizeText(fs.getFreeSpace("/")), hint, gray)
-  s:hints(H - 1, store and { { "Tab", "official list" }, { "Enter", "download" }, { "Esc", "quit" } }
-    or { { "Tab", "switch field" }, { "Enter", "download" }, { "Esc", "quit" } })
+  s:hints(H - 1, store and { { "Tab", "official list" }, { "Enter", "download" }, { "Esc", "close" } }
+    or { { "Tab", "switch field" }, { "Enter", "download" }, { "Esc", "close" } })
 end
 
 -- Ask the OS for the list before drawing. A call into the OS pauses this app.
@@ -202,6 +202,8 @@ local function saveBody(h)
         sum = ok and ("sha256 " .. hex:sub(1, 16) .. "...") or "?"
       end
       status = { "Saved /downloads/" .. name .. "  " .. sum, colors.lime }
+      -- Clear the form so the next link starts fresh.
+      url, name, field = "", "", 1
     else
       status = { "Could not save the file.", colors.orange }
     end

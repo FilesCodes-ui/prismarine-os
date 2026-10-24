@@ -453,10 +453,22 @@ end
 function Scene:scroll(x, y, h, total, first, visible)
   if total <= visible or h < 2 then return end
   local th = math.max(1, math.floor(h * visible / total + 0.5))
+  th = math.max(1, math.min(th, math.floor(h / 3)))  -- never a giant block
   local maxFirst = total - visible
   local ty = math.floor((h - th) * math.min(first, maxFirst) / math.max(1, maxFirst) + 0.5)
-  self:card(x, y, 1, h, K.c("bg"))
+  -- track: a dim strip with faint dots, so the bar reads as a scroll bar
+  self:card(x, y, 1, h, K.c("bar"))
+  for i = 0, h - 1 do self:text(x, y + i, ".", K.c("dim"), K.c("bar")) end
+  -- thumb: solid, with grip lines in the middle
   self:card(x, y + ty, 1, th, K.c("line"))
+  if th >= 3 then
+    local mid = y + ty + math.floor(th / 2)
+    self:text(x, mid, "=", K.c("bg"), K.c("line"))
+    if th >= 5 then
+      self:text(x, mid - 1, "-", K.c("bg"), K.c("line"))
+      self:text(x, mid + 1, "-", K.c("bg"), K.c("line"))
+    end
+  end
 end
 
 -- A switch. Returns the width used (5).

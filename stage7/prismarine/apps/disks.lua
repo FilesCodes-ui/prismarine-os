@@ -18,6 +18,7 @@ local clip = nil
 local flash, flashAt = nil, 0
 local viewing = nil     -- { name, lines }
 local vtop = 0
+local wantOpen = false  -- set by a second click on the same row; handled in the loop
 local ask = nil         -- { text, fn } or { text, input, fn }
 
 local function note(t) flash, flashAt = t, os.clock() end
@@ -128,10 +129,10 @@ local function draw()
         else
           s:text(4, y + 2, kit.fit(narrow and it.tag or "Size not available", W - 8), hint, gray)
         end
-        hits[#hits + 1] = { 2, y, W - 2, y + 4, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+        hits[#hits + 1] = { 2, y, W - 2, y + 4, function() if sel == idx then wantOpen = true end sel = idx end }
       end
     end
-    s:scroll(W, 3, ch, #items, top, per)
+    s:scroll(W - 1, 3, ch, #items, top, per)
   else
     s:card(2, 3, W - 2, ch, gray)
     local area = ch - 2
@@ -144,7 +145,7 @@ local function draw()
         local idx = top + i
         s:row(3, 3 + i, W - 4, (it.dir and "> " or "  ") .. it.name .. (it.dir and "/" or ""), idx == sel,
           { right = it.tag ~= "" and it.tag or nil, fg = it.dir and kit.c("info") or nil })
-        hits[#hits + 1] = { 3, 3 + i, W - 2, 3 + i, function() if sel == idx then os.queueEvent("pm_open") end sel = idx end }
+        hits[#hits + 1] = { 3, 3 + i, W - 2, 3 + i, function() if sel == idx then wantOpen = true end sel = idx end }
       end
     end
     s:scroll(W - 1, 4, area, #items, top, area)
@@ -158,8 +159,8 @@ local function draw()
     s:status(H - 2, flash, "warn")
   end
   s:hints(H - 1, atTop()
-    and { { "Enter", "open" }, { "R", "refresh" }, { "Q", "quit" } }
-    or { { "Enter", "open" }, { "Bksp", "up" }, { "V", "view" }, { "C", "copy" }, { "P", "paste" }, { "D", "delete" }, { "N", "folder" }, { "Q", "quit" } }, 1)
+    and { { "Enter", "open" }, { "R", "refresh" }, { "Q", "close" } }
+    or { { "Enter", "open" }, { "Bksp", "up" }, { "V", "view" }, { "C", "copy" }, { "P", "paste" }, { "D", "delete" }, { "N", "folder" }, { "Q", "close" } }, 1)
   s:flush()
 end
 
@@ -230,7 +231,6 @@ while true do
       sel, top = 1, 0
       refresh()
     end
-  elseif e == "pm_open" then openSel()
   elseif e == "char" then
     local c = ev[2]:lower()
     local it = items[sel]
@@ -248,6 +248,7 @@ while true do
     for _, h in ipairs(hits) do
       if ev[3] >= h[1] and ev[3] <= h[3] and ev[4] >= h[2] and ev[4] <= h[4] then h[5]() break end
     end
+    if wantOpen then wantOpen = false openSel() end
   elseif e == "mouse_scroll" then
     sel = sel + ev[2]
   end

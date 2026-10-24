@@ -1,8 +1,8 @@
 {
-  version = "24.3-stage7e",
+  version = "24.3-stage7h",
   files = {
-    ["prismarine/apps/disks.lua"] = "2f2e7f9220db00beea2b1294679326d0a6527bb3d6f1d8a370fdcd72034219d3",
-    ["prismarine/apps/download.lua"] = "272f5cf837237b7366b7499d7e7e9e73b5b767b2e876d2cc89dc3c422db699ff",
+    ["prismarine/apps/disks.lua"] = "39338284f36ad72ce5ee1ef64c0715c4201cf3ae5ba2c1e6f49bc6a4cf6a8709",
+    ["prismarine/apps/download.lua"] = "9bbc286180715ac386d03b8cc5297a9b69fd795bb1003797cbd3509344d8556f",
     ["prismarine/apps/editor.lua"] = "98f58c1c0086c71ff6c7d25363cead3d7daba08672b60ffe9d5e0929b8ad284d",
     ["prismarine/apps/messenger.lua"] = "3edf6c968820c9fb284a598ec6f6bac0a22acab3a1bccb9b2210356eeea31984",
     ["prismarine/apps/others.lua"] = "39f05e87d9a41365e09f21f80dbad67e59c59c0e30fd17199bbd475e0b768176",
@@ -46,7 +46,7 @@
     ["prismarine/sys/secure.lua"] = "2aa862b3d30e0f91e311133849c37539be3eeed9e8c8b05c30de94f35fd0834a",
     ["prismarine/sys/update.lua"] = "8ea7d896d97f1279876ec306754eb103214891d82af65dba2e8469655285a869",
     ["prismarine/ui/gfx.lua"] = "21f7f24dc20df24cbf3f1988c00b9deec6af83f3e610c69d9f13d596b93d0da2",
-    ["prismarine/ui/kit.lua"] = "820218df319faaa8ae1ecee849fe0d824de3250c59b7b4246cb366f0a6241d45",
+    ["prismarine/ui/kit.lua"] = "6cb6669b59e82eb6f5431d48eb3c582d707e29ca4b3c8dee3c177c90abbb1b25",
     ["prismarine/ui/login.lua"] = "bda1e699d53fddf9f3d67ad7d3e1c5375f1f7b9a27c906e2a96eb8b51cfbbec9",
     ["prismarine/ui/saverart.lua"] = "164c48fab01b6ef905bb1a6d787709e45ca8a7993377c895bddb80befe39fb72",
     ["prismarine/ui/screen.lua"] = "92b381fe327bc7e9f384c5153d797b27a84e055d0a2f3d7cbe79ffb4bad51cef",
