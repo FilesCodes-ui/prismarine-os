@@ -1,0 +1,45 @@
+[
+  {
+    "name": "Audio",
+    "about": "DFPWM music player with a visualizer",
+    "file": "store/p.audio_v5.lua",
+    "dest": "programs/audio.lua",
+    "auto": true
+  },
+  {
+    "name": "Rooms",
+    "about": "Chat rooms for your server: channels, private messages, roles, files",
+    "file": "store/p.rooms_v1.lua",
+    "dest": "programs/rooms.lua",
+    "auto": true
+  },
+  {
+    "name": "Pixel Dash",
+    "about": "Design monitor dashboards: touch buttons, redstone lamps, bars and clocks",
+    "file": "store/p.pixeldash_v1.lua",
+    "dest": "programs/pixeldash.lua",
+    "auto": true
+  },
+  {
+    "name": "Portals",
+    "about": "Open, seal and name Egress portals from a computer",
+    "file": "store/p.portals_v1.lua",
+    "dest": "programs/portals.lua",
+    "auto": true
+  },
+  {
+    "name": "Gate",
+    "about": "Dial and confirm Egress gates from a computer",
+    "file": "store/p.gate_v1.lua",
+    "dest": "programs/gate.lua",
+    "auto": true
+  },
+  {
+    "name": "Living Mice",
+    "about": "Music track for Audio (1 MB)",
+    "url": "https://raw.githubusercontent.com/FilesCodes-ui/prismarine-os/main/1-05.%20Living%20Mice.dfpwm",
+    "sha256": "6b039d139e51a50903281a1a688cf50652022fb0ce903bd12e1b285a0dc74c82",
+    "size": 1065018,
+    "dest": "music/Living Mice.dfpwm"
+  }
+]
