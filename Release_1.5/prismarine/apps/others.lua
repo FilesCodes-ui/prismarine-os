@@ -128,6 +128,7 @@ local function draw()
       local st = update.status()
       note(4, "Update", text)
       note(6, st.text or "", st.state == "error" and kit.c("warn") or (st.state == "available" and kit.c("warn") or kit.c("ok")))
+      if st.note and st.state ~= "error" then note(7, st.note, hint) end
       if st.state == "installing" and st.frac then
         s:meter(4, 8, W - 6, st.frac, kit.c("ok"), kit.c("bg"))
       end

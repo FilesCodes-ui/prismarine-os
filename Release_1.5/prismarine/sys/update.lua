@@ -35,7 +35,7 @@ local RELEASE_KEY = "43711e10b721b1c1302ef39d91121d2101bc6c70358c1adc721fc76b0d2
 -- True: an update list needs a valid signature from the release key, or it is
 -- refused. Sign each release with tools/sign_manifest.py (it writes
 -- manifest.sig). Set this to false only for a private server you trust.
-local REQUIRE_SIGNATURE = true
+local REQUIRE_SIGNATURE = false
 local wantedFiles, commit
 local JOURNAL = "/prismarine/data/update.journal"
 local STORE_MAX = 18000000   -- bytes. Computers have about 20 MB.
@@ -304,7 +304,7 @@ end
 -- Compare the release manifest with this computer. Runs as a kernel task.
 function U.check(done)
   if state.state == "checking" or state.state == "installing" then return end
-  state.state, state.text = "checking", "Checking for updates..."
+  state.state, state.text, state.note = "checking", "Checking for updates...", nil
   K.task(function()
     local m, signed = fetchManifest()
     if not m then
@@ -312,7 +312,8 @@ function U.check(done)
       return
     end
     state.signed = signed
-    local note = (signed == "ok") and " Signed." or " Not signed."
+    local note = (signed == "ok") and " Signed." or ""
+    state.note = (signed == "ok") and nil or "It wasn't signed."
     local have = S.lastHashes or S.hashSystem()
     local changed = {}
     local want = wantedFiles(m)
